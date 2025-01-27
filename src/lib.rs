@@ -1,4 +1,5 @@
-mod assembler;
-mod chat_client;
+use assembler::Assembler;
 
-pub use chat_client::*;
+pub struct ChatClient {
+    assembler: Assembler,
+}
