@@ -1,23 +1,35 @@
-use std::collections::{HashMap, HashSet};
+use crate::network_structure::NetworkTopology;
 use assembler::Assembler;
 use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use log::{error, info, warn};
+use messages::{Message, MessageContent};
+use std::collections::{HashMap, HashSet};
 use wg_2024::{
     controller::{DroneCommand, DroneEvent},
     network::{NodeId, SourceRoutingHeader},
-    packet::{self, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
+    packet::{
+        self, Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType
+    },
 };
-use crate::network_structure::NetworkNode;
+
 pub struct ChatClient {
+
     id: NodeId,
     assembler: Assembler,
+    network_knowledge: NetworkTopology,
+    client_list: Vec<NodeId>,
+    message_buffer: Vec<Message>,
+
     controller_send: Sender<DroneEvent>,
     controller_recv: Receiver<DroneCommand>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     flood_id_received: HashSet<(u64, NodeId)>,
-    flood_id_counter: u64
+
+    flood_id_counter: u64,
+    session_id_counter: u64,
+    
 }
 
 impl ChatClient {
@@ -34,7 +46,7 @@ impl ChatClient {
                                 warn!("{} [ ChatClient {} ]: Has crashed", "!!!".yellow(), self.id);
                                 break;
                             },
-                            _ => self.handle_command(command)
+                            _ => todo!()
                         }
                     }
                 },
@@ -63,10 +75,10 @@ impl ChatClient {
             if packet.routing_header.hop_index == packet.routing_header.hops.len() {
                 // the client received a packet
                 match packet.clone().pack_type {
-                    PacketType::MsgFragment(fragment) => todo!(),
-                    PacketType::Ack(ack) => todo!(),
-                    PacketType::Nack(nack) => todo!(),
-                    PacketType::FloodResponse(flood_response) => todo!(),
+                    PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
+                    PacketType::Ack(ack) => self.process_ack(ack),
+                    PacketType::Nack(nack) => self.process_nack(nack, &packet),
+                    PacketType::FloodResponse(flood_response) => self.process_flood_response(flood_response),
                     _ => unreachable!(),
                 }
             } else {
@@ -626,7 +638,6 @@ impl ChatClient {
 
         self.flood_id_counter += 1;
 
-
         let routing_header = SourceRoutingHeader {
             hops: vec![],
             hop_index: 0,
@@ -639,14 +650,114 @@ impl ChatClient {
         }
     }
 
-    //fn process_flood_response(&mut self, flood_response: FloodResponse, packet: &Packet) {
-    //    // the flood_responses arrive they should be stored in a data structure 
-    //    
-    //}
+    fn process_flood_response(&mut self, flood_response: FloodResponse) {
+        //in questo modo viene memorizzato il grafo
+        self.network_knowledge.process_path_trace(flood_response.path_trace.clone());
+        //missing logging
+    }
+
+    fn process_fragment(&mut self, fragment: Fragment, packet: &Packet) {
+
+        let new_routing_header = packet.routing_header.get_reversed();
+
+        let ack_packet = Packet {
+            routing_header: new_routing_header,
+            session_id: self.session_id_counter,
+            pack_type: PacketType::Ack(Ack { fragment_index: fragment.fragment_index })
+        };
+
+        self.forward_packet(ack_packet);
+
+        let source_id = packet.routing_header.source().unwrap();
+
+        if let Some(message) = self.assembler.process_fragment(fragment, packet.session_id, source_id) {
+            //utilizzo un buffer perchè potrebbero arrivari più messaggi in contemporanea e alcuni potrebbero essere 
+            //persi
+            self.message_buffer.push(message);
+            self.read_message();
+        }
+
+        //the client needs to send a ack
+
+        //missing logging
+
+    }
+
+    fn process_ack(&mut self, ack: Ack) {
+        //logging
+
+    }
+
+    fn process_nack(&mut self, nack: Nack, packet: &Packet) {
+        //logging 
+        match nack.clone().nack_type {
+            NackType::ErrorInRouting(_) => todo!(),
+            NackType::DestinationIsDrone => todo!(),
+            NackType::Dropped => todo!(),
+            NackType::UnexpectedRecipient(_) => todo!(),
+        }
+    }
+
+    fn read_message(&mut self) {
+        if let Some(message) = self.message_buffer.pop() {
+            
+            if message.destination_id != self.id {
+                //destinazione sbagliata 
+                error!(
+                    "{} [ ChatClient {} ]: Received a message with incorrect destination ID: {}",
+                    "✗".red(),
+                    self.id,
+                    message.destination_id
+                );
+                return;
+            }
+            if let MessageContent::FromServer(server_message) = message.content {
+                match server_message {
+                    
+                    messages::ServerMessage::ClientList(items) => {
+                        self.client_list = items;
+                         
+                        info!(
+                            "{} [ ChatClient {} ]: Updated client list: {:?}",
+                            "ℹ".blue(),
+                            self.id,
+                            self.client_list
+                        );
+                    },
+                    messages::ServerMessage::MessageReceived { sender_id, content } => {
+                        
+                        info!(
+                            "{} [ ChatClient {} ]: Message received from [ Client {} ]: {}",
+                            "✓".green(),
+                            self.id,
+                            sender_id,
+                            content
+                        );
+
+                    },
+                    messages::ServerMessage::ErrorWrongClientId => {
+                        error!(
+                            "{} [ ChatClient {} ]: Received an error indicating wrong client ID",
+                            "✗".red(),
+                            self.id
+                        );
+                    }
+                    _ => {
+                        
+                        error!(
+                            "{} [ ChatClient {} ]: Received a message intended for a web browser",
+                            "✗".red(),
+                            self.id
+                        );
+                    }
+                }
+            }
+        } else {
+            //log that there are no messages to read
+            info!("{} [ ChatClient {} ]: No messages to read", "ℹ".blue(), self.id);
+        }
+    }
 }
-
-
-    
 
 // flooding
 // ricevere pacchetti

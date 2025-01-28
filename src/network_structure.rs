@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, thread::current};
+use std::{
+    collections::{HashMap, HashSet},
+    thread::current,
+};
 
 use wg_2024::{network::NodeId, packet::NodeType};
 
@@ -10,13 +13,18 @@ struct NetworkNode {
     neighbors: HashSet<NodeId>,
 }
 
-struct NetworkTopology {
+pub struct NetworkTopology {
     nodes: HashMap<NodeId, NetworkNode>,
 }
 
 impl NetworkTopology {
+    pub fn new() -> Self {
+        Self {
+            nodes: HashMap::new(),
+        }
+    }
     //  itera sulla path trace, inserisce nella hash map i nodi non presenti e aggiunge tutti i vicini (bidirezionale)
-    pub fn process_path_trace(&mut self, flood_id: u64, path_trace: Vec<(NodeId, NodeType)>) {
+    pub fn process_path_trace(&mut self, path_trace: Vec<(NodeId, NodeType)>) {
         for i in 0..path_trace.len() {
             let (node_id, node_type) = path_trace[i];
 
@@ -82,5 +90,3 @@ impl NetworkTopology {
         visited.remove(&current);
     }
 }
-
-
