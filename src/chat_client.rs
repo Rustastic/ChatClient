@@ -707,11 +707,48 @@ impl ChatClient {
 
     fn process_nack(&mut self, nack: Nack, packet: &Packet) {
         //logging
+        info!(
+            "{} [ ChatClient {} ]: Processed Nack for fragment_index: {}",
+            "✓".green(),
+            self.id,
+            nack.fragment_index
+        );
         match nack.clone().nack_type {
-            NackType::ErrorInRouting(_) => todo!(), //identify the specific packet by (session,source,frag index) 
-            NackType::DestinationIsDrone => todo!(),
-            NackType::Dropped => todo!(),
-            NackType::UnexpectedRecipient(_) => todo!(),
+            NackType::ErrorInRouting(fragment_index) => {
+                
+                error!(
+                    "{} [ ChatClient {} ]: Received a Nack indicating an error in routing for fragment_index: {}",
+                    "✗".red(),
+                    self.id,
+                    fragment_index
+                );
+                
+
+            }, //identify the specific packet by (session,source,frag index) 
+            NackType::DestinationIsDrone => {
+                
+                error!(
+                    "{} [ ChatClient {} ]: Received a Nack indicating that the destination is a drone",
+                    "✗".red(),
+                    self.id
+                );
+            },
+            NackType::Dropped => {
+                
+                error!(
+                    "{} [ ChatClient {} ]: Received a Nack indicating that the packet was dropped",
+                    "✗".red(),
+                    self.id
+                );
+            },
+            NackType::UnexpectedRecipient(_) => {
+                
+                error!(
+                    "{} [ ChatClient {} ]: Received a Nack indicating that the recipient was unexpected",
+                    "✗".red(),
+                    self.id
+                );
+            },
         }
     }
 
