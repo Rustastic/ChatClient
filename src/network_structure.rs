@@ -23,6 +23,9 @@ impl NetworkTopology {
             nodes: HashMap::new(),
         }
     }
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+    }
     //  itera sulla path trace, inserisce nella hash map i nodi non presenti e aggiunge tutti i vicini (bidirezionale)
     pub fn process_path_trace(&mut self, path_trace: Vec<(NodeId, NodeType)>) {
         for i in 0..path_trace.len() {

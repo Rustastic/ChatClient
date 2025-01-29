@@ -1,4 +1,4 @@
-use crate::network_structure::NetworkTopology;
+use crate::{network_structure::NetworkTopology, packet_cache::PacketCache};
 use assembler::Assembler;
 use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
@@ -26,6 +26,7 @@ pub struct ChatClient {
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     flood_id_received: HashSet<(u64, NodeId)>,
+    packet_cache: PacketCache,
 
     flood_id_counter: u64,
     session_id_counter: u64,
@@ -692,17 +693,36 @@ impl ChatClient {
             self.message_buffer.push(message);
             self.read_message();
         }
-
-        
     }
 
-    fn process_ack(&mut self, ack: Ack) {
+    fn process_ack(&mut self, ack: Ack, packet: &Packet) {
         info!(
             "{} [ ChatClient {} ]: Processed Ack for fragment_index: {}",
             "✓".green(),
             self.id,
             ack.fragment_index
         );
+
+        if self
+            .packet_cache
+            .remove(packet.session_id, ack.fragment_index)
+        {
+            info!(
+                "{} [ ChatClient {} ]: Removed packet with session_id: {} and fragment_index: {} from the cache",
+                "✓".green(),
+                self.id,
+                packet.session_id,
+                ack.fragment_index
+            );
+        } else {
+            error!(
+                "{} [ ChatClient {} ]: Failed to remove packet with session_id: {} and fragment_index: {} from the cache",
+                "✗".red(),
+                self.id,
+                packet.session_id,
+                ack.fragment_index
+            );
+        }
     }
 
     fn process_nack(&mut self, nack: Nack, packet: &Packet) {
@@ -714,41 +734,82 @@ impl ChatClient {
             nack.fragment_index
         );
         match nack.clone().nack_type {
-            NackType::ErrorInRouting(fragment_index) => {
-                
-                error!(
-                    "{} [ ChatClient {} ]: Received a Nack indicating an error in routing for fragment_index: {}",
-                    "✗".red(),
-                    self.id,
-                    fragment_index
-                );
-                
+            NackType::ErrorInRouting(unreachable_node) => {
+                // Remove and get
 
-            }, //identify the specific packet by (session,source,frag index) 
+                if let Some((incorrect_packet, _)) = self
+                    .packet_cache
+                    .remove_and_get(packet.session_id, nack.fragment_index)
+                {
+                    // sto assumendo che la destinazione è per forza giusta e che il problema occorre quando un drone viene fatto crasharee
+
+                    let dest = incorrect_packet.routing_header.destination().unwrap();
+                    let paths_to_dest = self.network_knowledge.find_paths_to(self.id, dest);
+                    //al primo vettore contenuto in paths_to_dest non contenente unreachable_node si blocca l'iterazione e lo si seleziona come routing header
+
+                    for path in paths_to_dest.iter() {
+                        if !path.contains(&unreachable_node) {
+                            let new_routing_header = SourceRoutingHeader {
+                                hop_index: 0,
+                                hops: path.clone(),
+                            };
+
+                            let new_packet = Packet {
+                                pack_type: incorrect_packet.pack_type,
+                                routing_header: new_routing_header,
+                                session_id: incorrect_packet.session_id,
+                            };
+
+                            self.packet_cache.insert(new_packet.clone());
+
+                            self.forward_packet(new_packet);
+                            return;
+                        }
+                    }
+
+                    self.network_knowledge.clear();
+
+                    self.start_flooding();
+
+                    let new_paths = self.network_knowledge.find_paths_to(self.id, dest);
+
+                    let new_routing_header = SourceRoutingHeader {
+                        hop_index: 0,
+                        hops: new_paths[0].clone(),
+                    };
+
+                    let new_packet = Packet {
+                        pack_type: incorrect_packet.pack_type,
+                        routing_header: new_routing_header,
+                        session_id: incorrect_packet.session_id,
+                    };
+
+                    self.packet_cache.insert(new_packet.clone());
+
+                    self.forward_packet(new_packet);
+                }
+            } //identify the specific packet by (session,source,frag index)
             NackType::DestinationIsDrone => {
-                
                 error!(
                     "{} [ ChatClient {} ]: Received a Nack indicating that the destination is a drone",
                     "✗".red(),
                     self.id
                 );
-            },
+            }
             NackType::Dropped => {
-                
                 error!(
                     "{} [ ChatClient {} ]: Received a Nack indicating that the packet was dropped",
                     "✗".red(),
                     self.id
                 );
-            },
+            }
             NackType::UnexpectedRecipient(_) => {
-                
                 error!(
                     "{} [ ChatClient {} ]: Received a Nack indicating that the recipient was unexpected",
                     "✗".red(),
                     self.id
                 );
-            },
+            }
         }
     }
 
@@ -811,4 +872,3 @@ impl ChatClient {
         }
     }
 }
-
