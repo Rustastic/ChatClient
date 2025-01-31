@@ -15,12 +15,14 @@ struct NetworkNode {
 
 pub struct NetworkTopology {
     nodes: HashMap<NodeId, NetworkNode>,
+    pub server_list: HashSet<NodeId>,
 }
 
 impl NetworkTopology {
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
+            server_list: HashSet::new(),
         }
     }
     pub fn clear(&mut self) {
@@ -30,6 +32,10 @@ impl NetworkTopology {
     pub fn process_path_trace(&mut self, path_trace: Vec<(NodeId, NodeType)>) {
         for i in 0..path_trace.len() {
             let (node_id, node_type) = path_trace[i];
+
+            if let NodeType::Server = node_type {
+                self.server_list.insert(node_id);
+            }
 
             let node = self.nodes.entry(node_id).or_insert_with(|| NetworkNode {
                 id: node_id,

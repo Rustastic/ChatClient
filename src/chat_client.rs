@@ -3,11 +3,15 @@ use assembler::Assembler;
 use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use log::{error, info, warn};
-use messages::{Message, MessageContent};
+
+use messages::{
+    client_commands::*,
+    high_level_messages::{Message, MessageContent},
+};
+
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use wg_2024::{
-    controller::{DroneCommand, DroneEvent},
     network::{NodeId, SourceRoutingHeader},
     packet::{
         self, Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet,
@@ -17,13 +21,16 @@ use wg_2024::{
 
 pub struct ChatClient {
     id: NodeId,
+    running: bool,
+    registered: Option<NodeId>,
+    client_list: Vec<NodeId>,
     assembler: Assembler,
     network_knowledge: NetworkTopology,
-    client_list: Vec<NodeId>,
+    communication_server_list: Vec<NodeId>,
     message_buffer: Vec<Message>,
 
-    controller_send: Sender<DroneEvent>,
-    controller_recv: Receiver<DroneCommand>,
+    controller_send: Sender<ChatClientEvent>,
+    controller_recv: Receiver<ChatClientCommand>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     flood_id_received: HashSet<(u64, NodeId)>,
@@ -37,8 +44,8 @@ impl ChatClient {
     //build the chat client
     pub fn new(
         id: NodeId,
-        controller_send: Sender<DroneEvent>,
-        controller_recv: Receiver<DroneCommand>,
+        controller_send: Sender<ChatClientEvent>,
+        controller_recv: Receiver<ChatClientCommand>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
@@ -56,6 +63,9 @@ impl ChatClient {
             packet_cache: PacketCache::new(),
             flood_id_counter: 0,
             session_id_counter: 0,
+            running: false,
+            registered: None,
+            communication_server_list: Vec::new(),
         }
     }
     pub fn run(&mut self) {
@@ -63,13 +73,7 @@ impl ChatClient {
             select_biased! {
                 recv(self.controller_recv) -> command => {
                     if let Ok(command) = command {
-                        match command {
-                            DroneCommand::Crash => {
-                                warn!("{} [ ChatClient {} ]: Has crashed", "!!!".yellow(), self.id);
-                                break;
-                            },
-                            _ => todo!()
-                        }
+                        self.handle_command(command);
                     }
                 },
 
@@ -80,6 +84,77 @@ impl ChatClient {
                 },
 
             }
+        }
+    }
+
+    fn handle_command(&mut self, command: ChatClientCommand) {
+        match command {
+            ChatClientCommand::AddSender(node_id, sender) => {
+                if let std::collections::hash_map::Entry::Vacant(e) =
+                    self.packet_send.entry(node_id)
+                {
+                    info!(
+                        "{} Adding sender: {} to [ ChatClient {} ]",
+                        "✓".green(),
+                        node_id,
+                        self.id,
+                    );
+                    e.insert(sender);
+                } else {
+                    warn!(
+                        "{} [ ChatClient {} ] is already connected to [ Drone {} ]",
+                        "!!!".yellow(),
+                        self.id,
+                        node_id
+                    );
+                }
+            }
+            ChatClientCommand::RemoveSender(node_id) => {
+                if self.packet_send.contains_key(&node_id) {
+                    info!(
+                        "{} Removing sender: {} from [ ChatClient {} ]",
+                        "✓".green(),
+                        node_id,
+                        self.id
+                    );
+                    self.packet_send.remove(&node_id);
+                } else {
+                    warn!(
+                        "{} [ ChatClient {} ] is already disconnected from [ Drone {} ]",
+                        "!!!".yellow(),
+                        self.id,
+                        node_id
+                    );
+                }
+            }
+            ChatClientCommand::InitFlooding => {
+                info!(
+                    "{} [ ChatClient {} ]: Initiating flooding process",
+                    "ℹ".blue(),
+                    self.id
+                );
+                self.start_flooding();
+            }
+            ChatClientCommand::StartChatClient => {
+                self.running = true;
+                info!(
+                    "{} [ ChatClient {} ]: Starting ChatClient",
+                    "ℹ".blue(),
+                    self.id
+                );
+                self.query_communication_servers();
+            }
+            ChatClientCommand::SendMessageTo(destination_id, text) => {
+                let session_id = self.session_id_counter;
+                self.session_id_counter += 1;
+
+                let message =
+                    Message::new_client_message(session_id, self.id, destination_id, text);
+
+                self.send_message_to(message);
+            }
+            ChatClientCommand::RegisterTo(server_id) => self.register_to(server_id),
+            ChatClientCommand::GetClientListFrom(_) => self.get_client_list(),
         }
     }
 
@@ -652,6 +727,7 @@ impl ChatClient {
     }
 
     // the sim controller could send a command to the client that makes it start the flooding
+    
 
     fn start_flooding(&mut self) {
         let flood_request = FloodRequest {
@@ -984,6 +1060,7 @@ impl ChatClient {
         }
     }
 
+    todo!("MODIFICARE QUESTO METODO E FARE IN MODO CHE COMUNICHI CON IL SIM CONTROLLER");
     fn read_message(&mut self) {
         if let Some(message) = self.message_buffer.pop() {
             if message.destination_id != self.id {
@@ -1040,6 +1117,176 @@ impl ChatClient {
                 "ℹ".blue(),
                 self.id
             );
+        }
+    }
+    todo!("gestire i casi di errore");
+    fn send_message_to(&self, message: Message) {
+        // controllo che il chat client conosca i server, che sia registrato ad uno di loro e che la destinazione sia registrata a quel server
+        if self.running
+            && let Some(server_id) = self.registered
+        {
+            self.get_client_list();
+            if self.client_list.contains(&message.source_id) {
+                if let Ok(fragments) = self.assembler.fragment_message(&message) {
+                    let path = self.network_knowledge.find_paths_to(self.id, server_id)[0];
+
+                    let routing_header = SourceRoutingHeader {
+                        hop_index: 0,
+                        hops: path.clone(),
+                    };
+
+                    for frag in fragments {
+                        let packet_to_send = Packet {
+                            routing_header: routing_header.clone(),
+                            session_id: message.session_id,
+                            pack_type: PacketType::MsgFragment(frag),
+                        };
+
+                        self.packet_cache.insert(packet_to_send.clone());
+
+                        info!(
+                            "{} [ ChatClient {} ]: Sending fragment with session_id: {} and fragment_index: {} to [ Server {} ]",
+                            "✓".green(),
+                            self.id,
+                            message.session_id,
+                            frag.fragment_index,
+                            server_id
+                        );
+
+                        self.forward_packet(packet_to_send);
+                    }
+                }
+            }
+        }
+    }
+
+    fn query_communication_servers(&mut self) {
+        for server_id in self.network_knowledge.server_list.iter() {
+            let session_id = self.session_id_counter;
+            self.session_id_counter += 1;
+
+            let query = Message::new_client_message(
+                session_id,
+                self.id,
+                server_id,
+                messages::high_level_messages::ClientMessage::GetServerType,
+            );
+
+            let path = self.network_knowledge.find_paths_to(self.id, server_id)[0];
+
+            let routing_header = SourceRoutingHeader {
+                hop_index: 0,
+                hops: path,
+            };
+
+            if let Ok(fragments) = self.assembler.fragment_message(&query) {
+                for frag in fragments {
+                    let packet = Packet {
+                        routing_header: routing_header.clone(),
+                        session_id,
+                        pack_type: PacketType::MsgFragment(frag),
+                    };
+
+                    self.packet_cache.insert(packet.clone());
+
+                    info!(
+                        "{} [ ChatClient {} ]: Querying server [ Server {} ] with session_id: {}",
+                        "ℹ".blue(),
+                        self.id,
+                        server_id,
+                        session_id
+                    );
+
+                    self.forward_packet(packet);
+                }
+            }
+        }
+    }
+
+    fn get_client_list(&mut self) {
+        if self.running
+            && let Some(server_id) = self.registered
+        {
+            let session_id = self.session_id_counter;
+            self.session_id_counter += 1;
+
+            let message = Message::new_client_message(
+                session_id,
+                self.id,
+                server_id,
+                messages::high_level_messages::ClientMessage::GetClientList,
+            );
+
+            let path = self.network_knowledge.find_paths_to(self.id, server_id)[0];
+
+            let routing_header = SourceRoutingHeader {
+                hop_index: 0,
+                hops: path,
+            };
+
+            if let Ok(fragments) = self.assembler.fragment_message(&message) {
+                for frag in fragments {
+                    let packet = Packet {
+                        routing_header: routing_header.clone(),
+                        session_id,
+                        pack_type: PacketType::MsgFragment(frag),
+                    };
+
+                    self.packet_cache.insert(packet.clone());
+
+                    info!(
+                        "{} [ ChatClient {} ]: Requesting client list from [ Server {} ] with session_id: {}",
+                        "ℹ".blue(),
+                        self.id,
+                        server_id,
+                        session_id
+                    );
+
+                    self.forward_packet(packet);
+                }
+            }
+        }
+    }
+
+    fn register_to(&mut self, server_id: NodeId) {
+        if self.running && self.communication_server_list.contains(&server_id) {
+            let session_id = self.session_id_counter;
+            self.session_id_counter += 1;
+            let message = Message::new_client_message(
+                session_id,
+                self.id,
+                server_id,
+                messages::high_level_messages::ClientMessage::RegisterToChat,
+            );
+
+            let path = self.network_knowledge.find_paths_to(self.id, server_id)[0];
+
+            let routing_header = SourceRoutingHeader {
+                hop_index: 0,
+                hops: path,
+            };
+
+            if let Ok(fragments) = self.assembler.fragment_message(&message) {
+                for frag in fragments {
+                    let packet = Packet {
+                        routing_header: routing_header.clone(),
+                        session_id,
+                        pack_type: PacketType::MsgFragment(frag),
+                    };
+
+                    self.packet_cache.insert(packet.clone());
+
+                    info!(
+                        "{} [ ChatClient {} ]: Registering to [ Server {} ] with session_id: {}",
+                        "ℹ".blue(),
+                        self.id,
+                        server_id,
+                        session_id
+                    );
+
+                    self.forward_packet(packet);
+                }
+            }
         }
     }
 }
