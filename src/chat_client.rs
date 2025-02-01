@@ -4,10 +4,7 @@ use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use log::{error, info, warn};
 
-use messages::{
-    client_commands::*,
-    high_level_messages::{Message, MessageContent},
-};
+use messages::{client_commands::*, high_level_messages::*};
 
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
@@ -727,7 +724,6 @@ impl ChatClient {
     }
 
     // the sim controller could send a command to the client that makes it start the flooding
-    
 
     fn start_flooding(&mut self) {
         let flood_request = FloodRequest {
@@ -1075,8 +1071,8 @@ impl ChatClient {
             }
             if let MessageContent::FromServer(server_message) = message.content {
                 match server_message {
-                    messages::ServerMessage::ClientList(items) => {
-                        self.client_list = items;
+                    ServerMessage::ClientList(client_list) => {
+                        self.client_list = client_list;
 
                         info!(
                             "{} [ ChatClient {} ]: Updated client list: {:?}",
@@ -1084,8 +1080,13 @@ impl ChatClient {
                             self.id,
                             self.client_list
                         );
+
+                        self.controller_send.send(ChatClientEvent::ClientList(
+                            message.source_id,
+                            self.client_list.clone(),
+                        ));
                     }
-                    messages::ServerMessage::MessageReceived { sender_id, content } => {
+                    ServerMessage::MessageReceived { sender_id, content } => {
                         info!(
                             "{} [ ChatClient {} ]: Message received from [ Client {} ]: {}",
                             "✓".green(),
@@ -1093,13 +1094,29 @@ impl ChatClient {
                             sender_id,
                             content
                         );
+
+                        self.controller_send
+                            .send(ChatClientEvent::MessageReceived(sender_id, content));
                     }
-                    messages::ServerMessage::ErrorWrongClientId => {
+                    ServerMessage::ErrorWrongClientId => {
+                        // devo definire errori tra gli eventi
                         error!(
                             "{} [ ChatClient {} ]: Received an error indicating wrong client ID",
                             "✗".red(),
                             self.id
                         );
+                    }
+                    ServerMessage::SuccessfulRegistration => {
+                        self.registered = Some(message.source_id);
+                        info!(
+                            "{} [ ChatClient {} ]: Successfully registered to the server [ CommunicationServer {} ]",
+                            "✓".green(),
+                            self.id,
+                            message.source_id
+                        );
+                        self.controller_send
+                            .send(ChatClientEvent::RegisteredToServer(message.source_id))
+                            .unwrap();
                     }
                     _ => {
                         error!(
@@ -1109,9 +1126,10 @@ impl ChatClient {
                         );
                     }
                 }
+            } else {
+                // errore un client non può comunicare direttamente con un altro client
             }
         } else {
-            //log that there are no messages to read
             info!(
                 "{} [ ChatClient {} ]: No messages to read",
                 "ℹ".blue(),
