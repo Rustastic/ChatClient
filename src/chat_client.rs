@@ -374,7 +374,7 @@ impl ChatClient {
                     warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
 
                     self.controller_send
-                        .send(DroneEvent::PacketDropped(packet))
+                        .send(ChatClientEvent::ControllerShortcut(packet))
                         .unwrap();
 
                     warn!(
@@ -407,7 +407,7 @@ impl ChatClient {
                 warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
 
                 self.controller_send
-                    .send(DroneEvent::PacketDropped(packet))
+                    .send(ChatClientEvent::ControllerShortcut(packet))
                     .unwrap();
 
                 warn!(
@@ -423,24 +423,13 @@ impl ChatClient {
     }
 
     fn handle_ack_nack(&mut self, packet: Packet) {
-        if let PacketType::Nack(nack) = packet.clone().pack_type {
-            warn!(
-                "{} [ ChatClient {} ]: received a {}",
-                "!!!".yellow(),
-                self.id,
-                packet.pack_type,
-            );
-            // Send a nack to the previous node
-            self.send_nack(packet, None, NackType::Dropped);
-        } else {
-            warn!(
-                "{} [ ChatClient {} ]: received a {}",
-                "!!!".yellow(),
-                self.id,
-                packet.pack_type,
-            );
-            self.forward_packet(packet);
-        }
+        warn!(
+            "{} [ ChatClient {} ]: received a {}",
+            "!!!".yellow(),
+            self.id,
+            packet.pack_type,
+        );
+        self.forward_packet(packet);
     }
 
     fn send_nack(&self, mut packet: Packet, fragment: Option<Fragment>, nack_type: NackType) {
@@ -490,7 +479,7 @@ impl ChatClient {
 
                     //there is an error in sending the packet, the drone should send the packet to the simulation controller
                     self.controller_send
-                        .send(DroneEvent::PacketDropped(packet))
+                        .send(ChatClientEvent::ControllerShortcut(packet))
                         .unwrap();
                     warn!(
                         "└─>{} [ ChatClient {} ]: sent A Nack to the Simulation Controller",
@@ -526,7 +515,7 @@ impl ChatClient {
 
             // Send to the simulation controller
             self.controller_send
-                .send(DroneEvent::PacketDropped(packet))
+                .send(ChatClientEvent::ControllerShortcut(packet))
                 .unwrap();
             warn!(
                 "└─>{} [ ChatClient {} ]: sent A Nack to the Simulation Controller",
@@ -713,7 +702,7 @@ impl ChatClient {
                     warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
 
                     self.controller_send
-                        .send(DroneEvent::PacketDropped(new_packet))
+                        .send(ChatClientEvent::ControllerShortcut(new_packet))
                         .unwrap();
 
                     warn!(
@@ -736,7 +725,7 @@ impl ChatClient {
 
             // Send the packet to the simulation controller
             self.controller_send
-                .send(DroneEvent::PacketDropped(new_packet))
+                .send(ChatClientEvent::ControllerShortcut(new_packet))
                 .unwrap();
 
             warn!(
@@ -787,7 +776,7 @@ impl ChatClient {
                     warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
 
                     self.controller_send
-                        .send(DroneEvent::PacketDropped(new_packet))
+                        .send(ChatClientEvent::ControllerShortcut(new_packet))
                         .unwrap();
 
                     warn!(
@@ -809,7 +798,7 @@ impl ChatClient {
             warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
 
             self.controller_send
-                .send(DroneEvent::PacketDropped(new_packet))
+                .send(ChatClientEvent::ControllerShortcut(new_packet))
                 .unwrap();
 
             warn!(
