@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    thread::current,
-};
+use std::collections::{HashMap, HashSet};
 
 use wg_2024::{network::NodeId, packet::NodeType};
 

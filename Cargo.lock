@@ -124,7 +124,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 [[package]]
 name = "messages"
 version = "0.1.0"
-source = "git+https://github.com/Rustastic/Messages.git#1a8c9feb6133fc3434e73c2fbfdb09e1732ae6c0"
+source = "git+https://github.com/Rustastic/Messages.git#08bd4d7d9c72a6696ad3d9ba1a77b3d38307bc85"
 dependencies = [
  "bincode",
  "crossbeam-channel",
@@ -220,9 +220,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.96"
+version = "2.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5d0adab1ae378d7f53bdebc67a39f1f151407ef230f0ce2883572f5d8985c80"
+checksum = "36147f1a48ae0ec2b5b3bc5b537d267457555a10dc06f3dbc8cb11ba3006d3b1"
 dependencies = [
  "proc-macro2",
  "quote",
