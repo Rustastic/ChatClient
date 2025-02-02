@@ -1096,6 +1096,17 @@ impl ChatClient {
             }
             if let MessageContent::FromServer(server_message) = message.content {
                 match server_message {
+                    ServerMessage::ServerType(server_type) => {
+                        if let ServerType::Chat = server_type {
+                            self.communication_server_list.push(message.source_id);
+                            info!(
+                                "{} [ ChatClient {} ]: Discovered communication server [ CommunicationServer {} ]",
+                                "✓".green(),
+                                self.id,
+                                message.source_id
+                            );
+                        }
+                    }
                     ServerMessage::ClientList(client_list) => {
                         self.client_list = client_list;
 
