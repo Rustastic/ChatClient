@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use log::error;
-use rand::seq::index;
-use wg_2024::packet::{Fragment, Packet, PacketType};
+
+use wg_2024::packet::{Packet, PacketType};
 
 pub struct PacketCache {
     // session_id, fragment_id
