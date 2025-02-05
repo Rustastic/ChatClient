@@ -1,8 +1,9 @@
 use crate::{network_structure::NetworkTopology, packet_cache::PacketCache};
-use assembler::Assembler;
+use assembler::HighLevelMessageFactory;
 use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use log::{error, info, warn};
+use source_routing::Router;
 
 use messages::{client_commands::*, high_level_messages::*};
 
@@ -20,8 +21,8 @@ pub struct ChatClient {
     running: bool,
     registered: Option<NodeId>,
     client_list: Vec<NodeId>,
-    assembler: Assembler,
-    network_knowledge: NetworkTopology,
+    msgfactory: HighLevelMessageFactory,
+    router: Router,
     communication_server_list: Vec<NodeId>,
     message_buffer: Vec<Message>,
 
@@ -47,8 +48,8 @@ impl ChatClient {
     ) -> Self {
         Self {
             id,
-            assembler: Assembler::new(),
-            network_knowledge: NetworkTopology::new(),
+            msgfactory: HighLevelMessageFactory::new(id, NodeType::Client),
+            router: Router::new(id, NodeType::Client),
             client_list: Vec::new(),
             message_buffer: Vec::new(),
             controller_send,
@@ -267,7 +268,7 @@ impl ChatClient {
                 // the client received a packet
                 match packet.clone().pack_type {
                     PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
-                    PacketType::Ack(ack) => self.process_ack(ack, &packet),
+                    PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
                     PacketType::Nack(nack) => self.process_nack(nack, &packet),
                     PacketType::FloodResponse(flood_response) => {
                         self.process_flood_response(flood_response)
@@ -812,35 +813,29 @@ impl ChatClient {
     // the sim controller could send a command to the client that makes it start the flooding
 
     fn start_flooding(&mut self) {
-        let flood_request = FloodRequest {
-            flood_id: self.flood_id_counter, // da cambiare
-            initiator_id: self.id,
-            path_trace: vec![(self.id, NodeType::Client)],
-        };
+        let flood_request_packet = self.router.get_flood_request();
 
-        self.flood_id_counter += 1;
-        self.session_id_counter += 1;
-
-        let routing_header = SourceRoutingHeader {
-            hops: vec![],
-            hop_index: 0,
-        };
-
-        for neighbor in self.packet_send.iter() {
-            self.send_flood_request(
-                neighbor,
-                &flood_request,
-                routing_header.clone(),
-                self.session_id_counter,
-            );
+        for (neighbor, channel) in self.packet_send.iter() {
+            if let Ok(()) = channel.send(flood_request_packet.clone()) {
+                info!(
+                    "{} [ ChatClient {} ]: FloodRequest sent to [ Drone {} ]",
+                    "✓".green(),
+                    self.id,
+                    neighbor
+                );
+            } else {
+                error!(
+                    "{} [ ChatClient {} ]: Failed to send FloodRequest to [ Drone {} ]",
+                    "✗".red(),
+                    self.id,
+                    neighbor
+                );
+            }
         }
     }
 
     fn process_flood_response(&mut self, flood_response: FloodResponse) {
-        //in questo modo viene memorizzato il grafo
-        self.network_knowledge
-            .process_path_trace(flood_response.path_trace.clone());
-        //missing logging
+        self.router.handle_flood_response(&flood_response);
         info!(
             "{} [ ChatClient {} ]: Processed FloodResponse with flood_id: {}",
             "✓".green(),
@@ -865,43 +860,11 @@ impl ChatClient {
         let source_id = packet.routing_header.source().unwrap();
 
         if let Some(message) =
-            self.assembler
-                .process_fragment(fragment, packet.session_id, source_id)
+            self.msgfactory
+                .received_fragment(fragment, packet.session_id, source_id)
         {
-            //utilizzo un buffer perchè potrebbero arrivari più messaggi in contemporanea e alcuni potrebbero essere
-            //persi
             self.message_buffer.push(message);
             self.read_message();
-        }
-    }
-
-    fn process_ack(&mut self, ack: Ack, packet: &Packet) {
-        info!(
-            "{} [ ChatClient {} ]: Processed Ack for fragment_index: {}",
-            "✓".green(),
-            self.id,
-            ack.fragment_index
-        );
-
-        if self
-            .packet_cache
-            .remove(packet.session_id, ack.fragment_index)
-        {
-            info!(
-                "{} [ ChatClient {} ]: Removed packet with session_id: {} and fragment_index: {} from the cache",
-                "✓".green(),
-                self.id,
-                packet.session_id,
-                ack.fragment_index
-            );
-        } else {
-            error!(
-                "{} [ ChatClient {} ]: Failed to remove packet with session_id: {} and fragment_index: {} from the cache",
-                "✗".red(),
-                self.id,
-                packet.session_id,
-                ack.fragment_index
-            );
         }
     }
 
@@ -913,75 +876,41 @@ impl ChatClient {
                     "✗".red(),
                     self.id
                 );
-                if let Some((incorrect_packet, _)) = self
-                    .packet_cache
-                    .remove_and_get(packet.session_id, nack.fragment_index)
+                if let Some(incorrect_packet) =
+                    //self.packet_cache.remove_and_get(packet.session_id, nack.fragment_index)
+                    self
+                        .msgfactory
+                        .take_packet(packet.session_id, nack.fragment_index)
                 {
-                    // sto assumendo che la destinazione è per forza giusta e che il problema occorre quando un drone viene fatto crasharee
-
                     let dest = incorrect_packet.routing_header.destination().unwrap();
-                    let paths_to_dest = self.network_knowledge.find_paths_to(self.id, dest);
-                    //al primo vettore contenuto in paths_to_dest non contenente unreachable_node si blocca l'iterazione e lo si seleziona come routing header
 
-                    for path in paths_to_dest.iter() {
-                        if !path.contains(&unreachable_node) {
-                            let new_routing_header = SourceRoutingHeader {
-                                hop_index: 0,
-                                hops: path.clone(),
-                            };
+                    self.router.drone_crashed(unreachable_node);
 
-                            let new_packet = Packet {
-                                pack_type: incorrect_packet.pack_type,
-                                routing_header: new_routing_header,
-                                session_id: incorrect_packet.session_id,
-                            };
+                    if let Ok(new_routing_header) = self.router.get_source_routing_header(dest) {
+                        let new_packet = Packet {
+                            pack_type: incorrect_packet.pack_type,
+                            routing_header: new_routing_header,
+                            session_id: incorrect_packet.session_id,
+                        };
+                        self.msgfactory.insert_packet(&new_packet);
+                        info!(
+                            "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
+                            "✓".green(),
+                            self.id,
+                            new_packet.session_id,
+                            nack.fragment_index,
+                            dest
+                        );
 
-                            self.packet_cache.insert(new_packet.clone());
-
-                            //log also the fragment_index
-                            info!(
-                                "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
-                                "✓".green(),
-                                self.id,
-                                new_packet.session_id,
-                                nack.fragment_index,
-                                dest
-                            );
-
-                            self.forward_packet(new_packet);
-                            return;
-                        }
+                        self.forward_packet(new_packet);
+                    } else {
+                        error!(
+                            "{} [ ChatClient {} ]: No path to destination [ CommunicationServer {} ]",
+                            "✗".red(),
+                            self.id,
+                            dest
+                        );
                     }
-
-                    self.network_knowledge.clear();
-
-                    self.start_flooding();
-
-                    let new_paths = self.network_knowledge.find_paths_to(self.id, dest);
-
-                    let new_routing_header = SourceRoutingHeader {
-                        hop_index: 0,
-                        hops: new_paths[0].clone(),
-                    };
-
-                    let new_packet = Packet {
-                        pack_type: incorrect_packet.pack_type,
-                        routing_header: new_routing_header,
-                        session_id: incorrect_packet.session_id,
-                    };
-
-                    self.packet_cache.insert(new_packet.clone());
-
-                    info!(
-                        "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
-                        "✓".green(),
-                        self.id,
-                        new_packet.session_id,
-                        nack.fragment_index,
-                        dest
-                    );
-
-                    self.forward_packet(new_packet);
                 }
             } //identify the specific packet by (session,source,frag index)
             NackType::DestinationIsDrone => {
@@ -1000,11 +929,11 @@ impl ChatClient {
                     self.id
                 );
 
-                if let Some((dropped_packet, drop_counter)) = self
-                    .packet_cache
-                    .remove_and_get(packet.session_id, nack.fragment_index)
+                if let Some((dropped_packet, number_of_request)) = self
+                    .msgfactory
+                    .get_packet(packet.session_id, nack.fragment_index)
                 {
-                    if drop_counter >= 3 {
+                    if number_of_request >= 3 {
                         error!(
                             "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 3 times",
                             "✗".red(),
@@ -1017,18 +946,12 @@ impl ChatClient {
 
                         let dest = packet_to_resend.routing_header.destination().unwrap();
 
-                        let paths_to_dest = self.network_knowledge.find_paths_to(self.id, dest);
+                        let routing_headers = self.router.get_multiple_source_routing_headers(dest);
 
-                        let random_index = rand::thread_rng().gen_range(0..paths_to_dest.len());
+                        let random_index = rand::thread_rng().gen_range(0..routing_headers.len());
 
-                        let alt_path = paths_to_dest.get(random_index);
-
-                        let new_routing_header = SourceRoutingHeader {
-                            hop_index: 0,
-                            hops: alt_path.unwrap().clone(),
-                        };
-
-                        packet_to_resend.routing_header = new_routing_header;
+                        packet_to_resend.routing_header =
+                            routing_headers.get(random_index).unwrap().clone();
 
                         self.packet_cache.insert(packet_to_resend.clone());
 
@@ -1045,7 +968,7 @@ impl ChatClient {
                     } else {
                         let packet_to_resend = dropped_packet.clone();
 
-                        self.packet_cache.insert(packet_to_resend.clone());
+                        self.msgfactory.insert_packet(&packet_to_resend);
 
                         info!(
                             "{} [ ChatClient {} ]: Resending packet with session_id: {} and fragment_index: {}",
@@ -1059,85 +982,38 @@ impl ChatClient {
                     }
                 }
             }
-            NackType::UnexpectedRecipient(problematic_node) => {
+            NackType::UnexpectedRecipient(_problematic_node) => {
                 error!(
                     "{} [ ChatClient {} ]: Received a Nack indicating that the recipient was unexpected",
                     "✗".red(),
                     self.id
                 );
 
-                if let Some((incorrect_packet, _)) = self
-                    .packet_cache
-                    .remove_and_get(packet.session_id, nack.fragment_index)
+                if let Some(incorrect_packet) = self
+                    .msgfactory
+                    .take_packet(packet.session_id, nack.fragment_index)
                 {
-                    // sto assumendo che la destinazione è per forza giusta e che il problema occorre quando un drone viene fatto crasharee
-
                     let dest = incorrect_packet.routing_header.destination().unwrap();
-                    let paths_to_dest = self.network_knowledge.find_paths_to(self.id, dest);
-                    //al primo vettore contenuto in paths_to_dest non contenente unreachable_node si blocca l'iterazione e lo si seleziona come routing header
 
-                    for path in paths_to_dest.iter() {
-                        if !path.contains(&problematic_node) {
-                            let new_routing_header = SourceRoutingHeader {
-                                hop_index: 0,
-                                hops: path.clone(),
-                            };
+                    if let Ok(new_routing_header) = self.router.get_source_routing_header(dest) {
+                        let new_packet = Packet {
+                            pack_type: incorrect_packet.pack_type,
+                            routing_header: new_routing_header,
+                            session_id: incorrect_packet.session_id,
+                        };
+                        self.msgfactory.insert_packet(&new_packet);
+                        info!(
+                            "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
+                            "✓".green(),
+                            self.id,
+                            new_packet.session_id,
+                            nack.fragment_index,
+                            dest
+                        );
 
-                            let new_packet = Packet {
-                                pack_type: incorrect_packet.pack_type,
-                                routing_header: new_routing_header,
-                                session_id: incorrect_packet.session_id,
-                            };
-
-                            self.packet_cache.insert(new_packet.clone());
-
-                            //log also the fragment_index
-                            info!(
-                                "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
-                                "✓".green(),
-                                self.id,
-                                new_packet.session_id,
-                                nack.fragment_index,
-                                dest
-                            );
-
-                            self.forward_packet(new_packet);
-                            return;
-                        }
-                    }
-
-                    self.network_knowledge.clear();
-
-                    self.start_flooding();
-
-                    let new_paths = self.network_knowledge.find_paths_to(self.id, dest);
-
-                    let new_routing_header = SourceRoutingHeader {
-                        hop_index: 0,
-                        hops: new_paths[0].clone(),
-                    };
-
-                    let new_packet = Packet {
-                        pack_type: incorrect_packet.pack_type,
-                        routing_header: new_routing_header,
-                        session_id: incorrect_packet.session_id,
-                    };
-
-                    self.packet_cache.insert(new_packet.clone());
-
-                    info!(
-                        "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
-                        "✓".green(),
-                        self.id,
-                        new_packet.session_id,
-                        nack.fragment_index,
-                        dest
-                    );
-
-                    self.forward_packet(new_packet);
+                        self.forward_packet(new_packet);
+                    } // this the case where a drone receives a packet and hops[hop_index] is not equal to the drone id
                 }
-
-                // this the case where a drone receives a packet and hops[hop_index] is not equal to the drone id
             }
         }
     }
