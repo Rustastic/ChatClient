@@ -1,4 +1,3 @@
-use crate::{network_structure::NetworkTopology, packet_cache::PacketCache};
 use assembler::HighLevelMessageFactory;
 use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
@@ -31,10 +30,6 @@ pub struct ChatClient {
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     flood_id_received: HashSet<(u64, NodeId)>,
-    packet_cache: PacketCache,
-
-    flood_id_counter: u64,
-    session_id_counter: u64,
 }
 
 impl ChatClient {
@@ -57,9 +52,6 @@ impl ChatClient {
             packet_recv,
             packet_send,
             flood_id_received: HashSet::new(),
-            packet_cache: PacketCache::new(),
-            flood_id_counter: 0,
-            session_id_counter: 0,
             running: false,
             registered: None,
             communication_server_list: Vec::new(),
@@ -141,46 +133,48 @@ impl ChatClient {
                 );
                 self.query_communication_servers();
             }
-            ChatClientCommand::SendMessageTo(destination_id, text) => {
-                if self.running {
-                    if let Some(server_id) = self.registered {
-                        let session_id = self.session_id_counter;
-                        self.session_id_counter += 1;
-                        let message = Message::new_client_message(
-                            session_id,
+            ChatClientCommand::SendMessageTo(client_id, text) => {
+                if self.is_running() && self.is_registered() {
+                    if self.client_list.contains(&client_id) {
+                        let server_id = self.registered.unwrap();
+                        info!(
+                            "{} [ ChatClient {} ]: Sending message to [ ChatClient {} ] through [ CommunicationServer {} ]",
+                            "ℹ".blue(),
                             self.id,
+                            client_id,
                             server_id,
-                            ClientMessage::SendMessage {
-                                recipient_id: destination_id,
-                                content: text,
-                            },
                         );
-                        self.send_message_to(message, destination_id);
+                        let message_content =
+                            MessageContent::FromClient(ClientMessage::SendMessage {
+                                recipient_id: client_id,
+                                content: text,
+                            });
+                        self.generate_and_send_message(message_content, server_id);
                     } else {
                         error!(
-                            "{} [ ChatClient {} ]: Cannot send message, not registered to any server",
+                            "{} [ ChatClient {} ]: Cannot send message, destination client {} is unreachable",
                             "✗".red(),
-                            self.id
+                            self.id,
+                            client_id
                         );
                         self.controller_send
-                            .send(ChatClientEvent::ErrorNotRegistered)
+                            .send(ChatClientEvent::UnreachableClient(client_id))
                             .unwrap();
                     }
-                } else {
-                    error!(
-                        "{} [ ChatClient {} ]: Cannot send message, ChatClient is not running",
-                        "✗".red(),
-                        self.id
-                    );
-                    self.controller_send
-                        .send(ChatClientEvent::ErrorNotRunning)
-                        .unwrap();
                 }
             }
             ChatClientCommand::RegisterTo(server_id) => {
-                if self.running {
+                if self.is_running() {
                     if self.communication_server_list.contains(&server_id) {
-                        self.register_to(server_id)
+                        info!(
+                            "{} [ ChatClient {} ]: Registering to [ CommunicationServer {} ]",
+                            "ℹ".blue(),
+                            self.id,
+                            server_id,
+                        );
+                        let message_content =
+                            MessageContent::FromClient(ClientMessage::RegisterToChat);
+                        self.generate_and_send_message(message_content, server_id);
                     } else {
                         error!(
                             "{} [ ChatClient {} ]: Cannot register to server {}, it is not a communication server",
@@ -189,65 +183,32 @@ impl ChatClient {
                             server_id
                         );
                     }
-                } else {
-                    error!(
-                        "{} [ ChatClient {} ]: Cannot send message, ChatClient is not running",
-                        "✗".red(),
-                        self.id
-                    );
-                    self.controller_send
-                        .send(ChatClientEvent::ErrorNotRunning)
-                        .unwrap();
                 }
             }
             ChatClientCommand::GetClientList => {
-                if self.running {
-                    if let Some(_) = self.registered {
-                        self.get_client_list();
-                    } else {
-                        error!(
-                            "{} [ ChatClient {} ]: Cannot send message, not registered to any server",
-                            "✗".red(),
-                            self.id
-                        );
-                        self.controller_send
-                            .send(ChatClientEvent::ErrorNotRegistered)
-                            .unwrap();
-                    }
-                } else {
-                    error!(
-                        "{} [ ChatClient {} ]: Cannot send message, ChatClient is not running",
-                        "✗".red(),
-                        self.id
+                if self.is_running() && self.is_registered() {
+                    let server_id = self.registered.unwrap();
+                    info!(
+                        "{} [ ChatClient {} ]: Requesting client list from [ Server {} ]",
+                        "ℹ".blue(),
+                        self.id,
+                        server_id,
                     );
-                    self.controller_send
-                        .send(ChatClientEvent::ErrorNotRunning)
-                        .unwrap();
+                    let message_content = MessageContent::FromClient(ClientMessage::GetClientList);
+                    self.generate_and_send_message(message_content, server_id);
                 }
             }
             ChatClientCommand::LogOut => {
-                if self.running {
-                    if let Some(_) = self.registered {
-                        self.logout();
-                    } else {
-                        error!(
-                            "{} [ ChatClient {} ]: Cannot send message, not registered to any server",
-                            "✗".red(),
-                            self.id
-                        );
-                        self.controller_send
-                            .send(ChatClientEvent::ErrorNotRegistered)
-                            .unwrap();
-                    }
-                } else {
-                    error!(
-                        "{} [ ChatClient {} ]: Cannot send message, ChatClient is not running",
-                        "✗".red(),
-                        self.id
+                if self.is_running() && self.is_registered() {
+                    let server_id = self.registered.unwrap();
+                    info!(
+                        "{} [ ChatClient {} ]: Logging out from [ CommunicationServer {} ]",
+                        "ℹ".blue(),
+                        self.id,
+                        server_id,
                     );
-                    self.controller_send
-                        .send(ChatClientEvent::ErrorNotRunning)
-                        .unwrap();
+                    let message_content = MessageContent::FromClient(ClientMessage::Logout);
+                    self.generate_and_send_message(message_content, server_id);
                 }
             }
         }
@@ -263,7 +224,6 @@ impl ChatClient {
             // Increase hop_index
             packet.routing_header.increase_hop_index();
 
-            // If the destination has been reached, and it is a Drone (invalid destination)
             if packet.routing_header.hop_index == packet.routing_header.hops.len() {
                 // the client received a packet
                 match packet.clone().pack_type {
@@ -281,7 +241,7 @@ impl ChatClient {
                     //Step4
                     let neighbor = packet.routing_header.hops[packet.routing_header.hop_index];
                     error!(
-                    "{} [ Drone {} ]: can't send packet to Drone {} because it is not its neighbor",
+                    "{} [ ChatClient {} ]: can't send packet to Drone {} because it is not its neighbor",
                     "✗".red(),
                     self.id,
                     neighbor
@@ -291,7 +251,7 @@ impl ChatClient {
                 }
 
                 info!(
-                    "{} Packet with [ session_id: {} ] is being handled from [ Drone {} ]",
+                    "{} Packet with [ session_id: {} ] is being handled from [ ChatClient {} ]",
                     "✓".green(),
                     packet.session_id,
                     self.id
@@ -299,13 +259,39 @@ impl ChatClient {
 
                 // Handle packet types: Nack, Ack, MsgFragment, FloodResponse
                 match packet.clone().pack_type {
-                    PacketType::Nack(_nack) => self.handle_ack_nack(packet),
-                    PacketType::Ack(_ack) => self.handle_ack_nack(packet),
-                    PacketType::MsgFragment(fragment) => self.handle_fragment(packet, fragment),
-                    PacketType::FloodRequest(_) => unreachable!(),
+                    PacketType::Nack(_) => {
+                        warn!(
+                            "{} [ ChatClient {} ]: received a {}",
+                            "!!!".yellow(),
+                            self.id,
+                            packet.pack_type,
+                        );
+                        self.forward_packet(packet);
+                    }
+                    PacketType::Ack(_) => {
+                        warn!(
+                            "{} [ ChatClient {} ]: received a {}",
+                            "!!!".yellow(),
+                            self.id,
+                            packet.pack_type,
+                        );
+                        self.forward_packet(packet);
+                    }
+                    PacketType::MsgFragment(fragment) => {
+                        info!(
+                            "{} [ ChatClient {} ]: forwarded the the fragment [ fragment_index: {} ] of the Packet [ session_id: {} ]",
+                            "✓".green(),
+                            self.id,
+                            fragment.fragment_index,
+                            packet.session_id
+                        );
+
+                        self.forward_packet(packet);
+                    }
                     PacketType::FloodResponse(flood_response) => {
                         self.handle_flood_response(&flood_response, &packet);
                     }
+                    _ => unreachable!(),
                 }
             }
         }
@@ -317,7 +303,7 @@ impl ChatClient {
         } else {
             self.send_nack(packet, None, NackType::UnexpectedRecipient(self.id));
             error!(
-                "{} [ Drone {} ]: does not correspond to the Drone indicated by the `hop_index`",
+                "{} [ ChatClient {} ]: does not correspond to the Drone indicated by the `hop_index`",
                 "✗".red(),
                 self.id
             );
@@ -330,18 +316,6 @@ impl ChatClient {
         self.packet_send.contains_key(&destination)
     }
 
-    fn handle_fragment(&mut self, packet: Packet, fragment: Fragment) {
-        // Add the fragment to the buffer
-        info!(
-                "{} [ ChatClient {} ]: forwarded the the fragment [ fragment_index: {} ] of the Packet [ session_id: {} ]",
-                "✓".green(),
-                self.id,
-                fragment.fragment_index,
-                packet.session_id
-            );
-
-        self.forward_packet(packet);
-    }
     // ho cambiato il nome per la send_message del drone per evitare
     // ambiguita visto che ci sono anche i messaggi veri e propri
     fn forward_packet(&self, packet: Packet) -> bool {
@@ -421,16 +395,6 @@ impl ChatClient {
 
             false
         }
-    }
-
-    fn handle_ack_nack(&mut self, packet: Packet) {
-        warn!(
-            "{} [ ChatClient {} ]: received a {}",
-            "!!!".yellow(),
-            self.id,
-            packet.pack_type,
-        );
-        self.forward_packet(packet);
     }
 
     fn send_nack(&self, mut packet: Packet, fragment: Option<Fragment>, nack_type: NackType) {
@@ -537,7 +501,6 @@ impl ChatClient {
             return;
         };
 
-        // Add the current drone to the path-trace
         flood_request.path_trace.push((self.id, NodeType::Client));
 
         // Check if the flood request has already been processed
@@ -849,7 +812,7 @@ impl ChatClient {
 
         let ack_packet = Packet {
             routing_header: new_routing_header,
-            session_id: self.session_id_counter,
+            session_id: packet.session_id,
             pack_type: PacketType::Ack(Ack {
                 fragment_index: fragment.fragment_index,
             }),
@@ -884,7 +847,7 @@ impl ChatClient {
                 {
                     let dest = incorrect_packet.routing_header.destination().unwrap();
 
-                    self.router.drone_crashed(unreachable_node);
+                    let _ = self.router.drone_crashed(unreachable_node);
 
                     if let Ok(new_routing_header) = self.router.get_source_routing_header(dest) {
                         let new_packet = Packet {
@@ -953,7 +916,7 @@ impl ChatClient {
                         packet_to_resend.routing_header =
                             routing_headers.get(random_index).unwrap().clone();
 
-                        self.packet_cache.insert(packet_to_resend.clone());
+                        self.msgfactory.insert_packet(&packet_to_resend);
 
                         info!(
                             "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
@@ -1134,214 +1097,60 @@ impl ChatClient {
         }
     }
 
-    fn send_message_to(&mut self, message: Message, client_destination: NodeId) {
-        self.get_client_list();
-        if self.client_list.contains(&client_destination) {
-            let path = self
-                .network_knowledge
-                .find_paths_to(self.id, message.destination_id)[0]
-                .clone();
-
-            let routing_header = SourceRoutingHeader {
-                hop_index: 1,
-                hops: path.clone(),
-            };
-
-            if let Ok(fragments) = self.assembler.fragment_message(&message) {
-                for frag in fragments {
-                    let packet_to_send = Packet {
-                        routing_header: routing_header.clone(),
-                        session_id: message.session_id,
-                        pack_type: PacketType::MsgFragment(frag.clone()),
-                    };
-
-                    self.packet_cache.insert(packet_to_send.clone());
-
-                    info!(
-                            "{} [ ChatClient {} ]: Sending fragment with session_id: {} and fragment_index: {} to [ CommunicationServer {} ]",
-                            "✓".green(),
-                            self.id,
-                            message.session_id,
-                            frag.fragment_index,
-                            message.destination_id
-                        );
-
-                    self.forward_packet(packet_to_send);
-                }
-            }
-        } else {
-            // unreachable
-            error!(
-                "{} [ ChatClient {} ]: Cannot send message, destination client {} is unreachable",
-                "✗".red(),
+    fn query_communication_servers(&mut self) {
+        for server_id in self.router.get_server_list().iter() {
+            let message_content = MessageContent::FromClient(ClientMessage::GetServerType);
+            info!(
+                "{} [ ChatClient {} ]: Querying server [ Server {} ]",
+                "ℹ".blue(),
                 self.id,
-                client_destination
+                server_id,
+            );
+            self.generate_and_send_message(message_content, *server_id);
+        }
+    }
+
+    fn generate_and_send_message(&mut self, message_content: MessageContent, destination: NodeId) {
+        if let Ok(source_routing_header) = self.router.get_source_routing_header(destination) {
+            for frag_pack in self.msgfactory.get_message_from_message_content(
+                message_content,
+                &source_routing_header,
+                destination,
+            ) {
+                self.msgfactory.insert_packet(&frag_pack);
+                self.forward_packet(frag_pack);
+            }
+        }
+    }
+
+    fn is_running(&self) -> bool {
+        if !self.running {
+            error!(
+                "{} [ ChatClient {} ]: Cannot send message, ChatClient is not running",
+                "✗".red(),
+                self.id
             );
             self.controller_send
-                .send(ChatClientEvent::UnreachableClient(client_destination))
+                .send(ChatClientEvent::ErrorNotRunning)
                 .unwrap();
+            return false;
         }
+        true
     }
 
-    fn query_communication_servers(&mut self) {
-        for server_id in self.network_knowledge.server_list.iter() {
-            let session_id = self.session_id_counter;
-            self.session_id_counter += 1;
-
-            let query = Message::new_client_message(
-                session_id,
-                self.id,
-                *server_id,
-                ClientMessage::GetServerType,
+    fn is_registered(&self) -> bool {
+        if self.registered.is_none() {
+            error!(
+                "{} [ ChatClient {} ]: Cannot send message, not registered to any server",
+                "✗".red(),
+                self.id
             );
-
-            let path = self.network_knowledge.find_paths_to(self.id, *server_id)[0].clone();
-
-            let routing_header = SourceRoutingHeader {
-                hop_index: 1,
-                hops: path,
-            };
-
-            if let Ok(fragments) = self.assembler.fragment_message(&query) {
-                for frag in fragments {
-                    let packet = Packet {
-                        routing_header: routing_header.clone(),
-                        session_id,
-                        pack_type: PacketType::MsgFragment(frag),
-                    };
-
-                    self.packet_cache.insert(packet.clone());
-
-                    info!(
-                        "{} [ ChatClient {} ]: Querying server [ Server {} ] with session_id: {}",
-                        "ℹ".blue(),
-                        self.id,
-                        server_id,
-                        session_id
-                    );
-
-                    self.forward_packet(packet);
-                }
-            }
+            self.controller_send
+                .send(ChatClientEvent::ErrorNotRegistered)
+                .unwrap();
+            return false;
         }
-    }
 
-    fn get_client_list(&mut self) {
-        let server_id = self.registered.unwrap();
-        let session_id = self.session_id_counter;
-        self.session_id_counter += 1;
-
-        let message = Message::new_client_message(
-            session_id,
-            self.id,
-            server_id,
-            ClientMessage::GetClientList,
-        );
-
-        let path = self.network_knowledge.find_paths_to(self.id, server_id)[0].clone();
-
-        let routing_header = SourceRoutingHeader {
-            hop_index: 1,
-            hops: path,
-        };
-
-        if let Ok(fragments) = self.assembler.fragment_message(&message) {
-            for frag in fragments {
-                let packet = Packet {
-                    routing_header: routing_header.clone(),
-                    session_id,
-                    pack_type: PacketType::MsgFragment(frag),
-                };
-
-                self.packet_cache.insert(packet.clone());
-
-                info!(
-                        "{} [ ChatClient {} ]: Requesting client list from [ Server {} ] with session_id: {}",
-                        "ℹ".blue(),
-                        self.id,
-                        server_id,
-                        session_id
-                    );
-
-                self.forward_packet(packet);
-            }
-        }
-    }
-
-    fn register_to(&mut self, server_id: NodeId) {
-        let session_id = self.session_id_counter;
-        self.session_id_counter += 1;
-        let message = Message::new_client_message(
-            session_id,
-            self.id,
-            server_id,
-            ClientMessage::RegisterToChat,
-        );
-
-        let path = self.network_knowledge.find_paths_to(self.id, server_id)[0].clone();
-
-        let routing_header = SourceRoutingHeader {
-            hop_index: 1,
-            hops: path,
-        };
-
-        if let Ok(fragments) = self.assembler.fragment_message(&message) {
-            for frag in fragments {
-                let packet = Packet {
-                    routing_header: routing_header.clone(),
-                    session_id,
-                    pack_type: PacketType::MsgFragment(frag),
-                };
-
-                self.packet_cache.insert(packet.clone());
-
-                info!(
-                        "{} [ ChatClient {} ]: Registering to [ CommunicationServer {} ] with session_id: {}",
-                        "ℹ".blue(),
-                        self.id,
-                        server_id,
-                        session_id
-                    );
-
-                self.forward_packet(packet);
-            }
-        }
-    }
-
-    fn logout(&mut self) {
-        let server_id = self.registered.unwrap();
-        let session_id = self.session_id_counter;
-        self.session_id_counter += 1;
-        let message =
-            Message::new_client_message(session_id, self.id, server_id, ClientMessage::Logout);
-
-        let path = self.network_knowledge.find_paths_to(self.id, server_id)[0].clone();
-
-        let routing_header = SourceRoutingHeader {
-            hop_index: 1,
-            hops: path,
-        };
-
-        if let Ok(fragments) = self.assembler.fragment_message(&message) {
-            for frag in fragments {
-                let packet = Packet {
-                    routing_header: routing_header.clone(),
-                    session_id,
-                    pack_type: PacketType::MsgFragment(frag),
-                };
-
-                self.packet_cache.insert(packet.clone());
-
-                info!(
-                        "{} [ ChatClient {} ]: Logging out from [ CommunicationServer {} ] with session_id: {}",
-                        "ℹ".blue(),
-                        self.id,
-                        server_id,
-                        session_id
-                    );
-
-                self.forward_packet(packet);
-            }
-        }
+        true
     }
 }
