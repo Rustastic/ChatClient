@@ -1,12 +1,13 @@
 use super::ChatClient;
 use colored::Colorize;
-use log::{error, info};
+use log::{error, info, warn};
 
+use messages::client_commands::ChatClientEvent;
 use rand::Rng;
-use wg_2024::{network::SourceRoutingHeader, packet::{Ack, FloodResponse, Fragment, Nack, NackType, Packet, PacketType}};
+use wg_2024::{network::{NodeId, SourceRoutingHeader}, packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet, PacketType}};
 
 impl ChatClient {
-    pub(crate) fn handle_packet(&mut self, mut packet: Packet) {
+    pub(crate) fn handle_packet(&mut self, packet: Packet) {
         if let PacketType::FloodRequest(flood_request) = packet.clone().pack_type {
             let routing_header = SourceRoutingHeader::with_first_hop(
                 flood_request
@@ -71,7 +72,255 @@ impl ChatClient {
         }
     }
 
-    pub(crate) fn process_flood_response(&mut self, flood_response: FloodResponse) {
+    fn check_packet_correct_id(&self, packet: Packet) -> bool {
+        if self.id == packet.routing_header.hops[packet.routing_header.hop_index] {
+            true
+        } else {
+            self.send_nack(packet, None, NackType::UnexpectedRecipient(self.id));
+            error!(
+                "{} [ ChatClient {} ]: does not correspond to the Drone indicated by the `hop_index`",
+                "✗".red(),
+                self.id
+            );
+            false
+        }
+    }
+
+
+    pub(crate) fn forward_packet(&self, packet: Packet) -> bool {
+        let destination = packet.routing_header.hops[packet.routing_header.hop_index];
+        let packet_type = packet.pack_type.clone();
+
+        // Try sending to the destination drone
+        if let Some(sender) = self.packet_send.get(&destination) {
+            match sender.send(packet.clone()) {
+                Ok(()) => {
+                    info!(
+                        "{} [ ChatClient {} ]: was sent a {} packet to [ Node {} ]",
+                        "✓".green(),
+                        self.id,
+                        packet_type,
+                        destination
+                    );
+                    true
+                }
+                Err(e) => {
+                    // In case of an error, forward the packet to the simulation controller
+                    error!(
+                        "{} [ ChatClient {} ]: Failed to send the {} to [ Node {} ]: {}",
+                        "✗".red(),
+                        self.id,
+                        packet_type,
+                        destination,
+                        e
+                    );
+
+                    warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
+
+                    self.controller_send
+                        .send(ChatClientEvent::ControllerShortcut(packet))
+                        .unwrap();
+
+                    warn!(
+                        "└─>{} [ ChatClient {} ]: {} sent to Simulation Controller",
+                        "!!!".yellow(),
+                        self.id,
+                        packet_type,
+                    );
+
+                    false
+                }
+            }
+        } else {
+            // Handle case where there is no connection to the destination drone
+            if let PacketType::MsgFragment(_) = packet_type {
+                error!(
+                    "{} [ ChatClient {} ]: does not exist in the path",
+                    "✗".red(),
+                    destination
+                );
+            } else {
+                error!(
+                    "{} [ ChatClient {} ]: Failed to send the {}: No connection to [ Node {} ]",
+                    "✗".red(),
+                    self.id,
+                    packet_type,
+                    destination
+                );
+
+                warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
+
+                self.controller_send
+                    .send(ChatClientEvent::ControllerShortcut(packet))
+                    .unwrap();
+
+                warn!(
+                    "└─>{} [ Drone {} ]: {} sent to Simulation Controller",
+                    "!!!".yellow(),
+                    self.id,
+                    packet_type,
+                );
+            }
+
+            false
+        }
+    }
+
+    fn send_nack(&self, mut packet: Packet, fragment: Option<Fragment>, nack_type: NackType) {
+        packet
+            .routing_header
+            .hops
+            .drain(packet.routing_header.hop_index..);
+        packet.routing_header.reverse();
+
+        let prev_hop = packet.routing_header.current_hop().unwrap();
+
+        
+
+        let mut nack = Nack {
+            fragment_index: 0, // Default fragment index for non-fragmented NACKs
+            nack_type,
+        };
+
+        if let Some(frag) = fragment {
+            nack.fragment_index = frag.fragment_index;
+        }
+
+        packet.pack_type = PacketType::Nack(nack);
+
+        if let Some(sender) = self.packet_send.get(&prev_hop) {
+            // Send the NACK to the previous hop
+            match sender.send(packet.clone()) {
+                Ok(()) => {
+                    warn!(
+                        "{} Nack was sent from [ Drone {} ] to [ Drone {} ]",
+                        "!!!".yellow(),
+                        self.id,
+                        prev_hop
+                    );
+                }
+                Err(e) => {
+                    // Handle failure to send the NACK, send to the simulation controller instead
+                    warn!(
+                        "{} [ ChatClient {} ]: Failed to send the Nack to [ Drone {} ]: {}",
+                        "✗".red(),
+                        self.id,
+                        prev_hop,
+                        e
+                    );
+
+                    warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
+
+                    //there is an error in sending the packet, the drone should send the packet to the simulation controller
+                    self.controller_send
+                        .send(ChatClientEvent::ControllerShortcut(packet))
+                        .unwrap();
+                    warn!(
+                        "└─>{} [ ChatClient {} ]: sent A Nack to the Simulation Controller",
+                        "!!!".yellow(),
+                        self.id
+                    );
+                }
+            }
+        } else {
+            // If no connection to the previous hop, send the NACK to the simulation controller
+            error!(
+                "{} [ ChatClient {} ]: Failed to send the Nack: No connection to {}",
+                "✗".red(),
+                self.id,
+                prev_hop
+            );
+
+            warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
+
+            // Create the NACK (same logic as above)
+
+            // Send to the simulation controller
+            self.controller_send
+                .send(ChatClientEvent::ControllerShortcut(packet))
+                .unwrap();
+            warn!(
+                "└─>{} [ ChatClient {} ]: sent A Nack to the Simulation Controller",
+                "!!!".yellow(),
+                self.id
+            );
+        }
+    }
+
+    fn send_flood_response(
+        &self,
+        dest_node: NodeId,
+        flood_request: &FloodRequest,
+        routing_header: SourceRoutingHeader,
+        session_id: u64,
+        reason: &str,
+    ) {
+        let flood_response = FloodResponse {
+            flood_id: flood_request.flood_id,
+            path_trace: flood_request.path_trace.clone(),
+        };
+
+        let new_packet = Packet {
+            pack_type: PacketType::FloodResponse(flood_response.clone()),
+            routing_header,
+            session_id,
+        };
+
+        if let Some(sender) = self.packet_send.get(&dest_node) {
+            match sender.send(new_packet.clone()) {
+                Ok(()) => info!(
+                    "{} [ ChatClient {} ]: sent the FloodResponse to [ Node {} ]\n└─>Reason: {}",
+                    "✓".green(),
+                    self.id,
+                    dest_node,
+                    reason
+                ),
+                Err(e) => {
+                    error!(
+                        "{} [ ChatClient {} ]: Failed to send the FloodResponse to [ Node {} ]: {}",
+                        "✗".red(),
+                        self.id,
+                        dest_node,
+                        e
+                    );
+
+                    warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
+
+                    self.controller_send
+                        .send(ChatClientEvent::ControllerShortcut(new_packet))
+                        .unwrap();
+
+                    warn!(
+                        "└─>{} [ ChatClient {} ]: FloodResponse sent to Simulation Controller",
+                        "!!!".yellow(),
+                        self.id
+                    );
+                }
+            }
+        } else {
+            // Handle the case where there is no connection to the destination drone
+            error!(
+                "{} [ ChatClient {} ]: Failed to send the FloodResponse: No connection to [ Node {} ]",
+                "✗".red(),
+                self.id,
+                dest_node
+            );
+
+            warn!("├─>{} Sending to Simulation Controller...", "!!!".yellow());
+
+            self.controller_send
+                .send(ChatClientEvent::ControllerShortcut(new_packet))
+                .unwrap();
+
+            warn!(
+                "└─>{} [ ChatClient {} ]: FloodResponse sent to Simulation Controller",
+                "!!!".yellow(),
+                self.id
+            );
+        }
+    }
+
+    fn process_flood_response(&mut self, flood_response: FloodResponse) {
         self.router.handle_flood_response(&flood_response);
         info!(
             "{} [ ChatClient {} ]: Processed FloodResponse with flood_id: {}",
@@ -81,7 +330,7 @@ impl ChatClient {
         );
     }
 
-    pub(crate) fn process_fragment(&mut self, fragment: Fragment, packet: &Packet) {
+    fn process_fragment(&mut self, fragment: Fragment, packet: &Packet) {
         let new_routing_header = packet.routing_header.get_reversed();
 
         let ack_packet = Packet {
@@ -104,8 +353,8 @@ impl ChatClient {
             self.read_message();
         }
     }
-
-    pub(crate) fn process_nack(&mut self, nack: Nack, packet: &Packet) {
+    // to fix
+    fn process_nack(&mut self, nack: Nack, packet: &Packet) {
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
                 error!(
