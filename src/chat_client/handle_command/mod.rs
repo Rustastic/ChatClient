@@ -11,7 +11,7 @@ mod flooding;
 mod send_message;
 
 impl ChatClient {
-    pub(crate) fn handle_command(&mut self, command: ChatClientCommand) {
+    pub(super) fn handle_command(&mut self, command: ChatClientCommand) {
         match command {
             ChatClientCommand::AddSender(node_id, sender) => {
                 if let std::collections::hash_map::Entry::Vacant(e) =

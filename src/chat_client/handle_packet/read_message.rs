@@ -8,7 +8,7 @@ use messages::{
 use crate::ChatClient;
 
 impl ChatClient {
-    pub(crate) fn read_message(&mut self) {
+    pub(super) fn read_message(&mut self) {
         if let Some(message) = self.message_buffer.pop() {
             if message.destination_id != self.id {
                 //destinazione sbagliata

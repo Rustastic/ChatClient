@@ -10,7 +10,7 @@ use wg_2024::{
 };
 mod read_message;
 impl ChatClient {
-    pub(crate) fn handle_packet(&mut self, packet: Packet) {
+    pub(super) fn handle_packet(&mut self, packet: Packet) {
         if let PacketType::FloodRequest(flood_request) = packet.clone().pack_type {
             let routing_header = SourceRoutingHeader::with_first_hop(
                 flood_request
@@ -357,6 +357,7 @@ impl ChatClient {
             self.read_message();
         }
     }
+
     fn process_nack(&mut self, nack: Nack, packet: &Packet) {
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
