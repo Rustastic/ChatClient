@@ -133,11 +133,17 @@ impl ChatClient {
                 }
             }
         } else {
-            if let PacketType::MsgFragment(_) = packet_type {
+            if let PacketType::MsgFragment(fragment) = packet_type {
                 error!(
                     "{} [ ChatClient {} ]: does not exist in the path",
                     "✗".red(),
                     destination
+                );
+
+                self.send_nack(
+                    packet,
+                    Some(fragment),
+                    NackType::ErrorInRouting(destination),
                 );
             } else {
                 error!(
