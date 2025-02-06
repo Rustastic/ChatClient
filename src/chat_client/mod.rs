@@ -1,11 +1,7 @@
 use assembler::HighLevelMessageFactory;
-use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use log::{error, info};
-use source_routing::Router;
-
 use messages::{client_commands::*, high_level_messages::*};
-
+use source_routing::Router;
 use std::collections::HashMap;
 use wg_2024::{
     network::NodeId,
@@ -13,8 +9,7 @@ use wg_2024::{
 };
 
 mod handle_command;
-mod handle_message;
-mod process_packet;
+mod handle_packet;
 
 /// The `ChatClient` struct represents a client in a chat network.
 ///
@@ -103,28 +98,6 @@ impl ChatClient {
                     }
                 },
 
-            }
-        }
-    }
-    
-    fn start_flooding(&mut self) {
-        let flood_request_packet = self.router.get_flood_request();
-
-        for (neighbor, channel) in self.packet_send.iter() {
-            if let Ok(()) = channel.send(flood_request_packet.clone()) {
-                info!(
-                    "{} [ ChatClient {} ]: FloodRequest sent to [ Drone {} ]",
-                    "✓".green(),
-                    self.id,
-                    neighbor
-                );
-            } else {
-                error!(
-                    "{} [ ChatClient {} ]: Failed to send FloodRequest to [ Drone {} ]",
-                    "✗".red(),
-                    self.id,
-                    neighbor
-                );
             }
         }
     }

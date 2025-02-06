@@ -7,6 +7,9 @@ use messages::{
 
 use super::ChatClient;
 
+mod flooding;
+mod send_message;
+
 impl ChatClient {
     pub(crate) fn handle_command(&mut self, command: ChatClientCommand) {
         match command {

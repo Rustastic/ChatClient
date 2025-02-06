@@ -4,8 +4,11 @@ use log::{error, info, warn};
 
 use messages::client_commands::ChatClientEvent;
 use rand::Rng;
-use wg_2024::{network::{NodeId, SourceRoutingHeader}, packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet, PacketType}};
-
+use wg_2024::{
+    network::{NodeId, SourceRoutingHeader},
+    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet, PacketType},
+};
+mod read_message;
 impl ChatClient {
     pub(crate) fn handle_packet(&mut self, packet: Packet) {
         if let PacketType::FloodRequest(flood_request) = packet.clone().pack_type {
@@ -86,7 +89,6 @@ impl ChatClient {
         }
     }
 
-
     pub(crate) fn forward_packet(&self, packet: Packet) -> bool {
         let destination = packet.routing_header.hops[packet.routing_header.hop_index];
         let packet_type = packet.pack_type.clone();
@@ -105,7 +107,6 @@ impl ChatClient {
                     true
                 }
                 Err(e) => {
-                    // In case of an error, forward the packet to the simulation controller
                     error!(
                         "{} [ ChatClient {} ]: Failed to send the {} to [ Node {} ]: {}",
                         "✗".red(),
@@ -132,7 +133,6 @@ impl ChatClient {
                 }
             }
         } else {
-            // Handle case where there is no connection to the destination drone
             if let PacketType::MsgFragment(_) = packet_type {
                 error!(
                     "{} [ ChatClient {} ]: does not exist in the path",
@@ -174,8 +174,6 @@ impl ChatClient {
         packet.routing_header.reverse();
 
         let prev_hop = packet.routing_header.current_hop().unwrap();
-
-        
 
         let mut nack = Nack {
             fragment_index: 0, // Default fragment index for non-fragmented NACKs
