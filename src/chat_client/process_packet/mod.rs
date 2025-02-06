@@ -353,7 +353,6 @@ impl ChatClient {
             self.read_message();
         }
     }
-    // to fix
     fn process_nack(&mut self, nack: Nack, packet: &Packet) {
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
