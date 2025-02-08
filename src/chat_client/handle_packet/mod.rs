@@ -66,12 +66,23 @@ impl ChatClient {
                 self.id
             );
 
-            let fragment = match packet.clone().pack_type {
-                PacketType::MsgFragment(fragment) => Some(fragment),
-                _ => None,
-            };
+            //let fragment = match packet.clone().pack_type {
+            //    PacketType::MsgFragment(fragment) => Some(fragment),
+            //    _ => None,
+            //};
+            //self.send_nack(packet, fragment, NackType::UnexpectedRecipient(self.id));
 
-            self.send_nack(packet, fragment, NackType::UnexpectedRecipient(self.id));
+            if let PacketType::MsgFragment(fragment) = packet.clone().pack_type {
+                self.send_nack(
+                    packet,
+                    Some(fragment),
+                    NackType::UnexpectedRecipient(self.id),
+                );
+            } else {
+                self.controller_send
+                    .send(ChatClientEvent::ControllerShortcut(packet))
+                    .unwrap();
+            }
         }
     }
 
@@ -79,12 +90,21 @@ impl ChatClient {
         if self.id == packet.routing_header.hops[packet.routing_header.hop_index] {
             true
         } else {
-            self.send_nack(packet, None, NackType::UnexpectedRecipient(self.id));
             error!(
-                "{} [ ChatClient {} ]: does not correspond to the Drone indicated by the `hop_index`",
+                "{} [ Drone {} ]: does not correspond to the Drone indicated by the `hop_index`",
                 "✗".red(),
                 self.id
             );
+
+            if let PacketType::MsgFragment(frag) = packet.clone().pack_type {
+                self.send_nack(packet, Some(frag), NackType::UnexpectedRecipient(self.id));
+            } else {
+                //self.send_nack(packet.clone(), None, NackType::UnexpectedRecipient(self.id));
+                self.controller_send
+                    .send(ChatClientEvent::ControllerShortcut(packet))
+                    .unwrap();
+            }
+
             false
         }
     }
@@ -177,18 +197,24 @@ impl ChatClient {
             .routing_header
             .hops
             .drain(packet.routing_header.hop_index..);
-        packet.routing_header.reverse();
+
+        if let NackType::UnexpectedRecipient(id) = nack_type {
+            packet.routing_header.hops.push(id);
+        }
+
+        packet.routing_header.hops.reverse();
+
+        packet.routing_header.hop_index = 1;
 
         let prev_hop = packet.routing_header.current_hop().unwrap();
 
-        let mut nack = Nack {
-            fragment_index: 0, // Default fragment index for non-fragmented NACKs
+        let nack = Nack {
+            fragment_index: match fragment {
+                Some(frag) => frag.fragment_index,
+                None => 0,
+            }, // Default fragment index for non-fragmented NACKs
             nack_type,
         };
-
-        if let Some(frag) = fragment {
-            nack.fragment_index = frag.fragment_index;
-        }
 
         packet.pack_type = PacketType::Nack(nack);
 
