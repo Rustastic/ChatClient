@@ -40,48 +40,42 @@ impl ChatClient {
                     );
                 }
             }
-        } else if self.check_packet_correct_id(packet.clone())
-            && packet.routing_header.hop_index == packet.routing_header.len() - 1
-        {
-            info!(
-                "{} [ ChatClient {} ]: received a packet from [ Node {} ]",
-                "✓".green(),
-                self.id,
-                packet.routing_header.hops[packet.routing_header.hop_index - 1]
-            );
-            // the client received a packet
-            match packet.clone().pack_type {
-                PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
-                PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
-                PacketType::Nack(nack) => self.process_nack(nack, &packet),
-                PacketType::FloodResponse(flood_response) => {
-                    self.process_flood_response(flood_response)
-                }
-                _ => unreachable!(),
-            }
-        } else {
-            error!(
-                "{} [ ChatClient {} ]: received a packet but it is not the destination",
-                "✗".red(),
-                self.id
-            );
-
-            //let fragment = match packet.clone().pack_type {
-            //    PacketType::MsgFragment(fragment) => Some(fragment),
-            //    _ => None,
-            //};
-            //self.send_nack(packet, fragment, NackType::UnexpectedRecipient(self.id));
-
-            if let PacketType::MsgFragment(fragment) = packet.clone().pack_type {
-                self.send_nack(
-                    packet,
-                    Some(fragment),
-                    NackType::UnexpectedRecipient(self.id),
+        } else if self.check_packet_correct_id(packet.clone()) {
+            if packet.routing_header.hop_index == packet.routing_header.len() - 1 {
+                info!(
+                    "{} [ ChatClient {} ]: received a packet from [ Node {} ]",
+                    "✓".green(),
+                    self.id,
+                    packet.routing_header.hops[packet.routing_header.hop_index - 1]
                 );
+                // the client received a packet
+                match packet.clone().pack_type {
+                    PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
+                    PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
+                    PacketType::Nack(nack) => self.process_nack(nack, &packet),
+                    PacketType::FloodResponse(flood_response) => {
+                        self.process_flood_response(flood_response)
+                    }
+                    _ => unreachable!(),
+                }
             } else {
-                self.controller_send
-                    .send(ChatClientEvent::ControllerShortcut(packet))
-                    .unwrap();
+                error!(
+                    "{} [ ChatClient {} ]: received a packet but it is not the destination",
+                    "✗".red(),
+                    self.id
+                );
+
+                if let PacketType::MsgFragment(fragment) = packet.clone().pack_type {
+                    self.send_nack(
+                        packet,
+                        Some(fragment),
+                        NackType::UnexpectedRecipient(self.id),
+                    );
+                } else {
+                    self.controller_send
+                        .send(ChatClientEvent::ControllerShortcut(packet))
+                        .unwrap();
+                }
             }
         }
     }
@@ -99,7 +93,6 @@ impl ChatClient {
             if let PacketType::MsgFragment(frag) = packet.clone().pack_type {
                 self.send_nack(packet, Some(frag), NackType::UnexpectedRecipient(self.id));
             } else {
-                //self.send_nack(packet.clone(), None, NackType::UnexpectedRecipient(self.id));
                 self.controller_send
                     .send(ChatClientEvent::ControllerShortcut(packet))
                     .unwrap();
