@@ -12,17 +12,19 @@ mod read_message;
 impl ChatClient {
     pub(super) fn handle_packet(&mut self, packet: Packet) {
         if let PacketType::FloodRequest(flood_request) = packet.clone().pack_type {
-            let routing_header = SourceRoutingHeader::with_first_hop(
+            let mut routing_header = SourceRoutingHeader::new(
                 flood_request
                     .clone()
                     .path_trace
                     .into_iter()
                     .map(|(id, _ntype)| id)
                     .collect(),
-            )
-            .get_reversed();
+                1,
+            );
 
-            match routing_header.current_hop() {
+            routing_header.hops.reverse();
+
+            match routing_header.next_hop() {
                 Some(dest) => {
                     self.send_flood_response(
                         dest,
