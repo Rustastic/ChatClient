@@ -28,6 +28,10 @@ impl ChatClient {
 
             routing_header.hops.reverse();
 
+            if routing_header.hops.last().copied().unwrap() != flood_request.initiator_id {
+                routing_header.hops.push(flood_request.initiator_id);
+            }
+
             match routing_header.current_hop() {
                 Some(dest) => {
                     self.send_flood_response(
