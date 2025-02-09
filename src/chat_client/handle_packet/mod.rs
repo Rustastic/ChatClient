@@ -24,7 +24,7 @@ impl ChatClient {
 
             routing_header.hops.reverse();
 
-            match routing_header.next_hop() {
+            match routing_header.current_hop() {
                 Some(dest) => {
                     self.send_flood_response(
                         dest,
