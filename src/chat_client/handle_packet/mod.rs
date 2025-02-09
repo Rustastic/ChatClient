@@ -91,7 +91,7 @@ impl ChatClient {
             true
         } else {
             error!(
-                "{} [ Drone {} ]: does not correspond to the Drone indicated by the `hop_index`",
+                "{} [ ChatClient {} ]: does not correspond to the Node indicated by the `hop_index`",
                 "✗".red(),
                 self.id
             );
@@ -181,7 +181,7 @@ impl ChatClient {
                     .unwrap();
 
                 warn!(
-                    "└─>{} [ Drone {} ]: {} sent to Simulation Controller",
+                    "└─>{} [ ChatClient {} ]: {} sent to Simulation Controller",
                     "!!!".yellow(),
                     self.id,
                     packet_type,
@@ -223,7 +223,7 @@ impl ChatClient {
             match sender.send(packet.clone()) {
                 Ok(()) => {
                     warn!(
-                        "{} Nack was sent from [ Drone {} ] to [ Drone {} ]",
+                        "{} Nack was sent from [ ChatClient {} ] to [ Drone {} ]",
                         "!!!".yellow(),
                         self.id,
                         prev_hop
