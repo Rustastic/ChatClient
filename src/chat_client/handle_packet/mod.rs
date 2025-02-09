@@ -50,58 +50,39 @@ impl ChatClient {
                     );
                 }
             }
-        } else if self.check_packet_correct_id(packet.clone()) {
-            if packet.routing_header.hop_index == packet.routing_header.len() - 1 {
-                info!(
-                    "{} [ ChatClient {} ]: received a packet from [ Node {} ]",
-                    "✓".green(),
-                    self.id,
-                    packet.routing_header.hops[packet.routing_header.hop_index - 1]
-                );
-                // the client received a packet
-                match packet.clone().pack_type {
-                    PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
-                    PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
-                    PacketType::Nack(nack) => self.process_nack(nack, &packet),
-                    PacketType::FloodResponse(flood_response) => {
-                        self.process_flood_response(flood_response)
-                    }
-                    _ => unreachable!(),
+        } else if self.valid_packet(packet.clone()) {
+            info!(
+                "{} [ ChatClient {} ]: received a packet from [ Node {} ]",
+                "✓".green(),
+                self.id,
+                packet.routing_header.hops[packet.routing_header.hop_index - 1]
+            );
+            // the client received a packet
+            match packet.clone().pack_type {
+                PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
+                PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
+                PacketType::Nack(nack) => self.process_nack(nack, &packet),
+                PacketType::FloodResponse(flood_response) => {
+                    self.process_flood_response(flood_response)
                 }
-            } else {
-                error!(
-                    "{} [ ChatClient {} ]: received a packet but it is not the destination",
-                    "✗".red(),
-                    self.id
-                );
-
-                if let PacketType::MsgFragment(fragment) = packet.clone().pack_type {
-                    self.send_nack(
-                        packet,
-                        Some(fragment),
-                        NackType::UnexpectedRecipient(self.id),
-                    );
-                } else {
-                    self.controller_send
-                        .send(ChatClientEvent::ControllerShortcut(packet))
-                        .unwrap();
-                }
+                _ => unreachable!(),
             }
         }
     }
 
-    fn check_packet_correct_id(&self, packet: Packet) -> bool {
-        if self.id == packet.routing_header.hops[packet.routing_header.hop_index] {
+    fn valid_packet(&self, packet: Packet) -> bool {
+        if self.id == packet.routing_header.hops[packet.routing_header.hop_index]
+            && packet.routing_header.hop_index == packet.routing_header.len() - 1
+        {
             true
         } else {
-
             // to be removed added just to debug
             if let PacketType::FloodResponse(_) = packet.pack_type {
-                return true
+                return true;
             }
 
             error!(
-                "{} [ ChatClient {} ]: does not correspond to the Node indicated by the `hop_index`, routing_header: {} packetype: {}",
+                "{} [ ChatClient {} ]: does not correspond to the Node indicated by the `hop_index` or it's not the destination, routing_header: {} packetype: {}",
                 "✗".red(),
                 self.id,
                 packet.routing_header,
