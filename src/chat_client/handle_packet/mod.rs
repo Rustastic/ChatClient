@@ -91,10 +91,11 @@ impl ChatClient {
             true
         } else {
             error!(
-                "{} [ ChatClient {} ]: does not correspond to the Node indicated by the `hop_index`, routing_header: {}",
+                "{} [ ChatClient {} ]: does not correspond to the Node indicated by the `hop_index`, routing_header: {} packetype: {}",
                 "✗".red(),
                 self.id,
-                packet.routing_header
+                packet.routing_header,
+                packet.pack_type
             );
 
             if let PacketType::MsgFragment(frag) = packet.clone().pack_type {
