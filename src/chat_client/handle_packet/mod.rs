@@ -6,12 +6,15 @@ use messages::client_commands::ChatClientEvent;
 use rand::Rng;
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
-    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet, PacketType},
+    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
 };
 mod read_message;
 impl ChatClient {
     pub(super) fn handle_packet(&mut self, packet: Packet) {
-        if let PacketType::FloodRequest(flood_request) = packet.clone().pack_type {
+        if let PacketType::FloodRequest(mut flood_request) = packet.clone().pack_type {
+
+            flood_request.path_trace.push((self.id,NodeType::Client));
+
             let mut routing_header = SourceRoutingHeader::new(
                 flood_request
                     .clone()
