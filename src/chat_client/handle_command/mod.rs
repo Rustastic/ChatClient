@@ -112,10 +112,11 @@ impl ChatClient {
                         self.generate_and_send_message(message_content, server_id);
                     } else {
                         error!(
-                            "{} [ ChatClient {} ]: Cannot register to server {}, it is not a communication server",
+                            "{} [ ChatClient {} ]: Cannot register to server {}, it is not a communication server, communication_server_list: {:?}",
                             "✗".red(),
                             self.id,
-                            server_id
+                            server_id,
+                            self.communication_server_list
                         );
                     }
                 }
