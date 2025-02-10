@@ -39,7 +39,6 @@ impl ChatClient {
                         &flood_request,
                         routing_header,
                         packet.session_id,
-                        "Reached a ChatClient",
                     );
                 }
                 None => {
@@ -275,7 +274,6 @@ impl ChatClient {
         flood_request: &FloodRequest,
         routing_header: SourceRoutingHeader,
         session_id: u64,
-        reason: &str,
     ) {
         let flood_response = FloodResponse {
             flood_id: flood_request.flood_id,
@@ -291,11 +289,10 @@ impl ChatClient {
         if let Some(sender) = self.packet_send.get(&dest_node) {
             match sender.send(new_packet.clone()) {
                 Ok(()) => info!(
-                    "{} [ ChatClient {} ]: sent the FloodResponse to [ Node {} ]\n└─>Reason: {}",
+                    "{} [ ChatClient {} ]: sent the FloodResponse to [ Node {} ]",
                     "✓".green(),
                     self.id,
                     dest_node,
-                    reason
                 ),
                 Err(e) => {
                     error!(

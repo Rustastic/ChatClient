@@ -146,6 +146,9 @@ impl ChatClient {
                     self.generate_and_send_message(message_content, server_id);
                 }
             }
+            ChatClientCommand::LogNetwork => {
+                self.router.log_network();
+            }
         }
     }
 }
