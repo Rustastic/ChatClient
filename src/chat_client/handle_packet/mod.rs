@@ -52,7 +52,13 @@ impl ChatClient {
         } else if self.valid_packet(packet.clone()) {
             // the client received a packet
             match packet.clone().pack_type {
-                PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
+                PacketType::MsgFragment(fragment) => {
+                    info!(
+                        "Chatclient{} received a fragment calling process frgament",
+                        self.id
+                    );
+                    self.process_fragment(fragment, &packet)
+                }
                 PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
                 PacketType::Nack(nack) => self.process_nack(nack, &packet),
                 PacketType::FloodResponse(flood_response) => {
@@ -379,7 +385,9 @@ impl ChatClient {
             self.read_message();
         }
 
-        let _ = self.msgfactory.take_packet(packet.session_id, fragment.fragment_index);
+        let _ = self
+            .msgfactory
+            .take_packet(packet.session_id, fragment.fragment_index);
     }
 
     fn process_nack(&mut self, nack: Nack, packet: &Packet) {
