@@ -372,12 +372,14 @@ impl ChatClient {
 
         if let Some(message) =
             self.msgfactory
-                .received_fragment(fragment, packet.session_id, source_id)
+                .received_fragment(fragment.clone(), packet.session_id, source_id)
         {
             info!("[CHATCLIENT {}] THERE IS A MESSAGE TO READ", self.id);
             self.message_buffer.push(message);
             self.read_message();
         }
+
+        let _ = self.msgfactory.take_packet(packet.session_id, fragment.fragment_index);
     }
 
     fn process_nack(&mut self, nack: Nack, packet: &Packet) {
