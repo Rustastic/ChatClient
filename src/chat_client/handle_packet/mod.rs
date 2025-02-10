@@ -51,12 +51,6 @@ impl ChatClient {
                 }
             }
         } else if self.valid_packet(packet.clone()) {
-            info!(
-                "{} [ ChatClient {} ]: received a packet from [ Node {} ]",
-                "✓".green(),
-                self.id,
-                packet.routing_header.hops[packet.routing_header.hop_index - 1]
-            );
             // the client received a packet
             match packet.clone().pack_type {
                 PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
@@ -74,6 +68,12 @@ impl ChatClient {
         if self.id == packet.routing_header.hops[packet.routing_header.hop_index]
             && packet.routing_header.hop_index == packet.routing_header.len() - 1
         {
+            info!(
+                "{} [ ChatClient {} ]: received a packet from [ Node {} ]",
+                "✓".green(),
+                self.id,
+                packet.routing_header.hops[packet.routing_header.hop_index - 1]
+            );
             true
         } else {
             // to be removed added just to debug
