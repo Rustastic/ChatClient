@@ -351,10 +351,15 @@ impl ChatClient {
     }
 
     fn process_fragment(&mut self, fragment: Fragment, packet: &Packet) {
-        let new_routing_header = packet.routing_header.get_reversed();
+        let mut path = packet.clone().routing_header.hops;
+
+        path.reverse();
 
         let ack_packet = Packet {
-            routing_header: new_routing_header,
+            routing_header: SourceRoutingHeader {
+                hop_index: 1,
+                hops: path,
+            },
             session_id: packet.session_id,
             pack_type: PacketType::Ack(Ack {
                 fragment_index: fragment.fragment_index,
@@ -369,6 +374,7 @@ impl ChatClient {
             self.msgfactory
                 .received_fragment(fragment, packet.session_id, source_id)
         {
+            info!("[CHATCLIENT {}] THERE IS A MESSAGE TO READ", self.id);
             self.message_buffer.push(message);
             self.read_message();
         }
