@@ -44,7 +44,10 @@ impl ChatClient {
                         );
 
                         self.controller_send
-                            .send(ChatClientEvent::ClientList(self.id,self.client_list.clone()))
+                            .send(ChatClientEvent::ClientList(
+                                self.id,
+                                self.client_list.clone(),
+                            ))
                             .unwrap();
                     }
                     ServerMessage::MessageReceived { sender_id, content } => {
@@ -57,7 +60,9 @@ impl ChatClient {
                         );
 
                         self.controller_send
-                            .send(ChatClientEvent::MessageReceived(sender_id, content))
+                            .send(ChatClientEvent::MessageReceived(
+                                sender_id, self.id, content,
+                            ))
                             .unwrap();
                     }
                     ServerMessage::UnreachableClient(client_id) => {

@@ -100,7 +100,7 @@ impl ChatClient {
             }
             ChatClientCommand::RegisterTo(server_id) => {
                 if self.is_running() {
-                    info!("{:?}",self.communication_server_list);
+                    info!("{:?}", self.communication_server_list);
                     if self.communication_server_list.contains(&server_id) {
                         info!(
                             "{} [ ChatClient {} ]: Registering to [ CommunicationServer {} ]",

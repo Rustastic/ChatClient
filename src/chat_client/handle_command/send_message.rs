@@ -26,7 +26,7 @@ impl ChatClient {
         message_content: MessageContent,
         destination: NodeId,
     ) {
-        if let Ok(source_routing_header) = self.router.get_source_routing_header(destination) { 
+        if let Ok(source_routing_header) = self.router.get_source_routing_header(destination) {
             for frag_pack in self.msgfactory.get_message_from_message_content(
                 message_content,
                 &source_routing_header,
