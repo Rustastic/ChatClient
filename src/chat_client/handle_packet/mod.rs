@@ -82,10 +82,6 @@ impl ChatClient {
             );
             true
         } else {
-            // to be removed added just to debug
-            if let PacketType::FloodResponse(_) = packet.pack_type {
-                return true;
-            }
 
             error!(
                 "{} [ ChatClient {} ]: does not correspond to the Node indicated by the `hop_index` or it's not the destination, routing_header: {} packetype: {}",
