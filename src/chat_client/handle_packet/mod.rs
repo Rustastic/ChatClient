@@ -56,6 +56,7 @@ impl ChatClient {
                 PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
                 PacketType::Nack(nack) => self.process_nack(nack, &packet),
                 PacketType::FloodResponse(flood_response) => {
+                    info!("[CHATCLIENT {}]: {}", self.id, flood_response);
                     self.process_flood_response(flood_response)
                 }
                 _ => unreachable!(),
