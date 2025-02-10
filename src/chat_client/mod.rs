@@ -1,6 +1,9 @@
 use assembler::HighLevelMessageFactory;
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use messages::{client_commands::*, high_level_messages::*};
+use messages::{
+    client_commands::{ChatClientCommand, ChatClientEvent},
+    high_level_messages::Message,
+};
 use source_routing::Router;
 use std::collections::HashMap;
 use wg_2024::{
@@ -50,6 +53,7 @@ impl ChatClient {
     /// # Returns
     ///
     /// A new `ChatClient` instance.
+    #[must_use]
     pub fn new(
         id: NodeId,
         controller_send: Sender<ChatClientEvent>,
@@ -94,7 +98,7 @@ impl ChatClient {
 
                 recv(self.packet_recv) -> packet => {
                     if let Ok(packet) = packet {
-                        self.handle_packet(packet);
+                        self.handle_packet(&packet);
                     }
                 },
 

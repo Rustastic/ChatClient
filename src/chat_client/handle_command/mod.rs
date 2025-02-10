@@ -11,6 +11,7 @@ mod flooding;
 mod send_message;
 
 impl ChatClient {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn handle_command(&mut self, command: ChatClientCommand) {
         match command {
             ChatClientCommand::AddSender(node_id, sender) => {

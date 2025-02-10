@@ -8,6 +8,7 @@ use messages::{
 use crate::ChatClient;
 
 impl ChatClient {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn read_message(&mut self) {
         if let Some(message) = self.message_buffer.pop() {
             if message.destination_id != self.id {

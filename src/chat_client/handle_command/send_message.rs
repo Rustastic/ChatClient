@@ -3,13 +3,16 @@ use super::ChatClient;
 use colored::Colorize;
 use log::{error, info};
 
-use messages::{client_commands::*, high_level_messages::*};
+use messages::{
+    client_commands::ChatClientEvent,
+    high_level_messages::{ClientMessage, MessageContent},
+};
 
 use wg_2024::network::NodeId;
 
 impl ChatClient {
     pub(super) fn query_communication_servers(&mut self) {
-        for server_id in self.router.get_server_list().iter() {
+        for server_id in &self.router.get_server_list() {
             let message_content = MessageContent::FromClient(ClientMessage::GetServerType);
             info!(
                 "{} [ ChatClient {} ]: Querying server [ Server {} ]",

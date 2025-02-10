@@ -12,7 +12,8 @@ use wg_2024::{
 };
 mod read_message;
 impl ChatClient {
-    pub(super) fn handle_packet(&mut self, packet: Packet) {
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn handle_packet(&mut self, packet: &Packet) {
         if let PacketType::FloodRequest(mut flood_request) = packet.clone().pack_type {
             flood_request.path_trace.push((self.id, NodeType::Client));
 
@@ -52,14 +53,14 @@ impl ChatClient {
         } else if self.valid_packet(packet.clone()) {
             // the client received a packet
             match packet.clone().pack_type {
-                PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
+                PacketType::MsgFragment(fragment) => self.process_fragment(&fragment, packet),
                 PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
-                PacketType::Nack(nack) => self.process_nack(nack, &packet),
+                PacketType::Nack(nack) => self.process_nack(&nack, packet),
                 PacketType::FloodResponse(flood_response) => {
                     info!("[CHATCLIENT {}]: {}", self.id, flood_response);
-                    self.process_flood_response(flood_response)
+                    self.process_flood_response(&flood_response);
                 }
-                _ => unreachable!(),
+                PacketType::FloodRequest(_) => unreachable!(),
             }
         }
     }
@@ -335,8 +336,8 @@ impl ChatClient {
         }
     }
 
-    fn process_flood_response(&mut self, flood_response: FloodResponse) {
-        self.router.handle_flood_response(&flood_response);
+    fn process_flood_response(&mut self, flood_response: &FloodResponse) {
+        self.router.handle_flood_response(flood_response);
         info!(
             "{} [ ChatClient {} ]: Processed FloodResponse with flood_id: {}",
             "✓".green(),
@@ -345,7 +346,7 @@ impl ChatClient {
         );
     }
 
-    fn process_fragment(&mut self, fragment: Fragment, packet: &Packet) {
+    fn process_fragment(&mut self, fragment: &Fragment, packet: &Packet) {
         let mut path = packet.clone().routing_header.hops;
 
         path.reverse();
@@ -378,8 +379,8 @@ impl ChatClient {
             .msgfactory
             .take_packet(packet.session_id, fragment.fragment_index);
     }
-
-    fn process_nack(&mut self, nack: Nack, packet: &Packet) {
+    #[allow(clippy::too_many_lines)]
+    fn process_nack(&mut self, nack: &Nack, packet: &Packet) {
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
                 error!(
