@@ -64,7 +64,7 @@ dependencies = [
 [[package]]
 name = "assembler"
 version = "0.1.0"
-source = "git+https://github.com/Rustastic/Assembler.git#885087402d865707b0246b3ee70951fa9011bd1f"
+source = "git+https://github.com/Rustastic/Assembler.git#ec654f2ae926b015b5a7c21e7b0c7627e6623a5f"
 dependencies = [
  "colored",
  "log",
