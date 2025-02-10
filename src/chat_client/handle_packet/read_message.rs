@@ -44,7 +44,7 @@ impl ChatClient {
                         );
 
                         self.controller_send
-                            .send(ChatClientEvent::ClientList(self.client_list.clone()))
+                            .send(ChatClientEvent::ClientList(self.id,self.client_list.clone()))
                             .unwrap();
                     }
                     ServerMessage::MessageReceived { sender_id, content } => {

@@ -105,7 +105,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "assembler"
 version = "0.1.0"
-source = "git+https://github.com/Rustastic/Assembler.git#bb16d0cfde2da6cce079d755301ffa857f126125"
+source = "git+https://github.com/Rustastic/Assembler.git#51b298e55204b6641af0b5d5e8617b053af95e72"
 dependencies = [
  "colored",
  "log",
@@ -593,7 +593,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 [[package]]
 name = "messages"
 version = "0.1.0"
-source = "git+https://github.com/Rustastic/Messages.git#fe5762eb3062f0b159ab8b42f025981a3c6fcdfc"
+source = "git+https://github.com/Rustastic/Messages.git#3de0fedff5ff19e7aff590e98a3118093d0d81f2"
 dependencies = [
  "bincode",
  "crossbeam-channel",
