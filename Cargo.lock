@@ -408,7 +408,7 @@ dependencies = [
 [[package]]
 name = "source_routing"
 version = "0.1.0"
-source = "git+https://github.com/Rustastic/source_routing.git#eff57de3a737f1dea03797510b86a60c1b537c5e"
+source = "git+https://github.com/Rustastic/source_routing.git#d11ddfbfcbd41819220286ad4f92946e4b6cd1e4"
 dependencies = [
  "colored",
  "crossbeam-channel",
