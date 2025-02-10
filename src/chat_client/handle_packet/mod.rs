@@ -52,13 +52,7 @@ impl ChatClient {
         } else if self.valid_packet(packet.clone()) {
             // the client received a packet
             match packet.clone().pack_type {
-                PacketType::MsgFragment(fragment) => {
-                    info!(
-                        "Chatclient{} received a fragment calling process frgament",
-                        self.id
-                    );
-                    self.process_fragment(fragment, &packet)
-                }
+                PacketType::MsgFragment(fragment) => self.process_fragment(fragment, &packet),
                 PacketType::Ack(ack) => self.msgfactory.received_ack(ack, packet.session_id),
                 PacketType::Nack(nack) => self.process_nack(nack, &packet),
                 PacketType::FloodResponse(flood_response) => {
@@ -82,7 +76,6 @@ impl ChatClient {
             );
             true
         } else {
-
             error!(
                 "{} [ ChatClient {} ]: does not correspond to the Node indicated by the `hop_index` or it's not the destination, routing_header: {} packetype: {}",
                 "✗".red(),
