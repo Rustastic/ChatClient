@@ -460,7 +460,7 @@ impl ChatClient {
 
                         let destination = dropped_packet.routing_header.destination().unwrap();
 
-                        self.reinit_network();
+                        
 
                         if let Ok(new_routing_header) =
                             self.router.get_source_routing_header(destination)
@@ -484,11 +484,12 @@ impl ChatClient {
                             self.forward_packet(packet_to_resend);
                         } else {
                             error!(
-                                "{} [ ChatClient {} ]: No available path to destination [ CommunicationServer {} ] after network reinit",
+                                "{} [ ChatClient {} ]: No available path to destination [ CommunicationServer {} ]",
                                 "✗".red(),
                                 self.id,
                                 destination
                             );
+                            self.reinit_network();
                         }
                     } else {
                         let packet_to_resend = dropped_packet.clone();
