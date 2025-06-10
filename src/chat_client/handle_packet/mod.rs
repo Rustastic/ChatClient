@@ -381,6 +381,7 @@ impl ChatClient {
     }
     #[allow(clippy::too_many_lines)]
     fn process_nack(&mut self, nack: &Nack, packet: &Packet) {
+        let nack_src = packet.routing_header.source().unwrap();
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
                 error!(
@@ -406,7 +407,7 @@ impl ChatClient {
                         };
                         self.msgfactory.insert_packet(&new_packet);
                         info!(
-                            "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
+                            "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ CommunicationServer {} ]",
                             "✓".green(),
                             self.id,
                             new_packet.session_id,
@@ -422,6 +423,7 @@ impl ChatClient {
                             self.id,
                             dest
                         );
+                        self.reinit_network();
                     }
                 }
             } //identify the specific packet by (session,source,frag index)
@@ -441,6 +443,8 @@ impl ChatClient {
                     self.id
                 );
 
+                self.router.dropped_fragment(nack_src);
+
                 if let Some((dropped_packet, number_of_request)) = self
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
@@ -454,29 +458,38 @@ impl ChatClient {
                             nack.fragment_index
                         );
 
-                        let mut packet_to_resend = dropped_packet.clone();
+                        let destination = dropped_packet.routing_header.destination().unwrap();
 
-                        let dest = packet_to_resend.routing_header.destination().unwrap();
+                        self.reinit_network();
 
-                        let routing_headers = self.router.get_multiple_source_routing_headers(dest);
+                        if let Ok(new_routing_header) =
+                            self.router.get_source_routing_header(destination)
+                        {
+                            let packet_to_resend = Packet {
+                                routing_header: new_routing_header,
+                                ..dropped_packet
+                            };
 
-                        let random_index = rand::thread_rng().gen_range(0..routing_headers.len());
+                            self.msgfactory.insert_packet(&packet_to_resend);
 
-                        packet_to_resend.routing_header =
-                            routing_headers.get(random_index).unwrap().clone();
-
-                        self.msgfactory.insert_packet(&packet_to_resend);
-
-                        info!(
+                            info!(
                             "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
                             "✓".green(),
                             self.id,
                             packet_to_resend.session_id,
                             nack.fragment_index,
-                            dest
-                        );
+                            destination
+                            );
 
-                        self.forward_packet(packet_to_resend);
+                            self.forward_packet(packet_to_resend);
+                        } else {
+                            error!(
+                                "{} [ ChatClient {} ]: No available path to destination [ CommunicationServer {} ] after network reinit",
+                                "✗".red(),
+                                self.id,
+                                destination
+                            );
+                        }
                     } else {
                         let packet_to_resend = dropped_packet.clone();
 
