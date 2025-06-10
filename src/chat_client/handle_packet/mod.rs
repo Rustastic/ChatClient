@@ -445,9 +445,9 @@ impl ChatClient {
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
                 {
-                    if number_of_request >= 3 {
+                    if number_of_request > 100 {
                         error!(
-                            "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 3 times",
+                            "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 100 times",
                             "✗".red(),
                             self.id,
                             dropped_packet.session_id,

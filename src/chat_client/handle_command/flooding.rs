@@ -4,7 +4,7 @@ use log::{error, info};
 use crate::ChatClient;
 
 impl ChatClient {
-    pub(super) fn start_flooding(&mut self) {
+    pub fn start_flooding(&mut self) {
         let flood_request_packet = self.router.get_flood_request();
 
         for (neighbor, channel) in &self.packet_send {

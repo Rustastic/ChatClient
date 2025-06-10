@@ -1,15 +1,18 @@
 use assembler::HighLevelMessageFactory;
+use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use messages::{
     client_commands::{ChatClientCommand, ChatClientEvent},
     high_level_messages::Message,
 };
 use source_routing::Router;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use wg_2024::{
     network::NodeId,
     packet::{NodeType, Packet},
 };
+use log::info;
+use std::thread;
 
 mod handle_command;
 mod handle_packet;
@@ -104,5 +107,16 @@ impl ChatClient {
 
             }
         }
+    }
+
+    fn reinit_network(&mut self) {
+        info!(
+            "{} [ ChatClient {} ]: reinitializing the network...",
+            "✓".green(),
+            self.id
+        );
+        self.router.clear_routing_table();
+        self.start_flooding();
+        thread::sleep(Duration::from_secs(2));
     }
 }
