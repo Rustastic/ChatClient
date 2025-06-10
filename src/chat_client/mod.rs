@@ -115,7 +115,6 @@ impl ChatClient {
             "✓".green(),
             self.id
         );
-        self.router.clear_routing_table();
         self.start_flooding();
         thread::sleep(Duration::from_secs(2));
     }

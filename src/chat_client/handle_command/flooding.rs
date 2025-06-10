@@ -6,7 +6,7 @@ use crate::ChatClient;
 impl ChatClient {
     pub fn start_flooding(&mut self) {
         let flood_request_packet = self.router.get_flood_request();
-
+        self.router.clear_routing_table();
         for (neighbor, channel) in &self.packet_send {
             if let Ok(()) = channel.send(flood_request_packet.clone()) {
                 info!(
