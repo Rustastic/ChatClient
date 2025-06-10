@@ -25,7 +25,6 @@ impl ChatClient {
                         self.id,
                     );
                     e.insert(sender);
-                    self.reinit_network();
                 } else {
                     warn!(
                         "{} [ ChatClient {} ] is already connected to [ Drone {} ]",
@@ -44,7 +43,6 @@ impl ChatClient {
                         self.id
                     );
                     self.packet_send.remove(&node_id);
-                    self.reinit_network();
                 } else {
                     warn!(
                         "{} [ ChatClient {} ] is already disconnected from [ Drone {} ]",

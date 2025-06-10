@@ -3,7 +3,6 @@ use colored::Colorize;
 use log::{error, info, warn};
 
 use messages::client_commands::ChatClientEvent;
-use rand::Rng;
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{
@@ -384,6 +383,7 @@ impl ChatClient {
         let nack_src = packet.routing_header.source().unwrap();
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
+                self.router.dropped_fragment(unreachable_node);
                 error!(
                     "{} [ ChatClient {} ]: Received a Nack indicating an error in the routing",
                     "✗".red(),
@@ -508,7 +508,8 @@ impl ChatClient {
                     }
                 }
             }
-            NackType::UnexpectedRecipient(_problematic_node) => {
+            NackType::UnexpectedRecipient(problematic_node) => {
+                self.router.dropped_fragment(problematic_node);
                 error!(
                     "{} [ ChatClient {} ]: Received a Nack indicating that the recipient was unexpected",
                     "✗".red(),
