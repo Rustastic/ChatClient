@@ -401,11 +401,11 @@ impl ChatClient {
 
                     if let Ok(new_routing_header) = self.router.get_source_routing_header(dest) {
                         let new_packet = Packet {
-                            pack_type: incorrect_packet.pack_type,
                             routing_header: new_routing_header,
-                            session_id: incorrect_packet.session_id,
+                            ..incorrect_packet
                         };
                         self.msgfactory.insert_packet(&new_packet);
+                        
                         info!(
                             "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ CommunicationServer {} ]",
                             "✓".green(),
@@ -445,34 +445,31 @@ impl ChatClient {
 
                 self.router.dropped_fragment(nack_src);
 
-                if let Some((dropped_packet, number_of_request)) = self
+                if let Some((dropped_packet, _)) = self
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
                 {
-                    if number_of_request > 100 {
-                        error!(
-                            "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 100 times",
+                    error!(
+                            "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped",
                             "✗".red(),
                             self.id,
                             dropped_packet.session_id,
                             nack.fragment_index
                         );
 
-                        let destination = dropped_packet.routing_header.destination().unwrap();
+                    let destination = dropped_packet.routing_header.destination().unwrap();
 
-                        
+                    if let Ok(new_routing_header) =
+                        self.router.get_source_routing_header(destination)
+                    {
+                        let packet_to_resend = Packet {
+                            routing_header: new_routing_header,
+                            ..dropped_packet
+                        };
 
-                        if let Ok(new_routing_header) =
-                            self.router.get_source_routing_header(destination)
-                        {
-                            let packet_to_resend = Packet {
-                                routing_header: new_routing_header,
-                                ..dropped_packet
-                            };
+                        self.msgfactory.insert_packet(&packet_to_resend);
 
-                            self.msgfactory.insert_packet(&packet_to_resend);
-
-                            info!(
+                        info!(
                             "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ Server {} ]",
                             "✓".green(),
                             self.id,
@@ -481,30 +478,15 @@ impl ChatClient {
                             destination
                             );
 
-                            self.forward_packet(packet_to_resend);
-                        } else {
-                            error!(
+                        self.forward_packet(packet_to_resend);
+                    } else {
+                        error!(
                                 "{} [ ChatClient {} ]: No available path to destination [ CommunicationServer {} ]",
                                 "✗".red(),
                                 self.id,
                                 destination
                             );
-                            self.reinit_network();
-                        }
-                    } else {
-                        let packet_to_resend = dropped_packet.clone();
-
-                        self.msgfactory.insert_packet(&packet_to_resend);
-
-                        info!(
-                            "{} [ ChatClient {} ]: Resending packet with session_id: {} and fragment_index: {}",
-                            "✓".green(),
-                            self.id,
-                            packet_to_resend.session_id,
-                            nack.fragment_index
-                        );
-
-                        self.forward_packet(packet_to_resend);
+                        self.reinit_network();
                     }
                 }
             }
