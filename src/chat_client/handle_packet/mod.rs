@@ -277,7 +277,7 @@ impl ChatClient {
         };
 
         let new_packet = Packet {
-            pack_type: PacketType::FloodResponse(flood_response.clone()),
+            pack_type: PacketType::FloodResponse(flood_response),
             routing_header,
             session_id,
         };
@@ -383,14 +383,15 @@ impl ChatClient {
         let nack_src = packet.routing_header.source().unwrap();
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
-                self.router.dropped_fragment(unreachable_node);
                 error!(
                     "{} [ ChatClient {} ]: Received a Nack indicating an error in the routing",
                     "✗".red(),
                     self.id
                 );
+
+                self.router.dropped_fragment(unreachable_node);
+
                 if let Some(incorrect_packet) =
-                    //self.packet_cache.remove_and_get(packet.session_id, nack.fragment_index)
                     self
                         .msgfactory
                         .take_packet(packet.session_id, nack.fragment_index)
@@ -405,7 +406,7 @@ impl ChatClient {
                             ..incorrect_packet
                         };
                         self.msgfactory.insert_packet(&new_packet);
-                        
+
                         info!(
                             "{} [ ChatClient {} ]: Forwarding packet with session_id: {} and fragment_index: {} to [ CommunicationServer {} ]",
                             "✓".green(),
@@ -426,7 +427,7 @@ impl ChatClient {
                         self.reinit_network();
                     }
                 }
-            } //identify the specific packet by (session,source,frag index)
+            }
             NackType::DestinationIsDrone => {
                 // se la destinazione è un drone non sono in grado di risalire al vero destinatario è quindi impossibile inviare il messaggio
                 // non dovrebbe accadere in ogni caso

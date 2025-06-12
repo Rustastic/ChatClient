@@ -1,18 +1,18 @@
 use assembler::HighLevelMessageFactory;
 use colored::Colorize;
 use crossbeam_channel::{select_biased, Receiver, Sender};
+use log::info;
 use messages::{
     client_commands::{ChatClientCommand, ChatClientEvent},
     high_level_messages::Message,
 };
 use source_routing::Router;
+use std::thread;
 use std::{collections::HashMap, time::Duration};
 use wg_2024::{
     network::NodeId,
     packet::{NodeType, Packet},
 };
-use log::info;
-use std::thread;
 
 mod handle_command;
 mod handle_packet;
@@ -35,7 +35,6 @@ pub struct ChatClient {
     router: Router,
     communication_server_list: Vec<NodeId>,
     message_buffer: Vec<Message>,
-
     controller_send: Sender<ChatClientEvent>,
     controller_recv: Receiver<ChatClientCommand>,
     packet_recv: Receiver<Packet>,
