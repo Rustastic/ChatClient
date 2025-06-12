@@ -438,15 +438,11 @@ impl ChatClient {
                 );
             }
             NackType::Dropped => {
-                error!(
-                    "{} [ ChatClient {} ]: Received a Nack indicating that the packet was dropped",
-                    "✗".red(),
-                    self.id
-                );
+                
 
                 self.router.dropped_fragment(nack_src);
 
-                if let Some((dropped_packet, _)) = self
+                if let Some((dropped_packet, requests)) = self
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
                 {
@@ -457,6 +453,17 @@ impl ChatClient {
                             dropped_packet.session_id,
                             nack.fragment_index
                         );
+                    
+                    if requests > 100 {
+                        error!(
+                            "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 100 times. Dropping permanently.",
+                            "✗".red(),
+                            self.id,
+                            dropped_packet.session_id,
+                            nack.fragment_index
+                        );
+                        return;
+                    }
 
                     let destination = dropped_packet.routing_header.destination().unwrap();
 
