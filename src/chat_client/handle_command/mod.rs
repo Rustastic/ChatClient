@@ -64,7 +64,7 @@ impl ChatClient {
                 for (sender, request) in self.packet_send.values().zip(requests) {
                     if sender.send(request).is_err() {
                         error!(
-                            "{} [ ChatClient {} ]: Failed to send flooding request",
+                            "{} [ ChatClient {} ]: Failed to send floodrequest",
                             "✓".green(),
                             self.id
                         );

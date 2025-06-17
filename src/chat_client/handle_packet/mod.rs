@@ -1,3 +1,5 @@
+use std::{thread, time::Duration};
+
 use super::ChatClient;
 use colored::Colorize;
 use log::{error, info, warn};
@@ -438,10 +440,28 @@ impl ChatClient {
             NackType::Dropped => {
                 self.router.dropped_fragment(nack_src);
 
-                if let Some((dropped_packet, _)) = self
+                if let Some((dropped_packet, requests)) = self
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
                 {
+                    if requests > 100 {
+                        info!(
+                            "{} [ ChatClient {} ]: Reinitializing network due to excessive dropped requests",
+                            "ℹ".blue(),
+                            self.id
+                        );
+                        let requests = self.router.get_flood_requests(self.packet_send.len());
+                        for (sender, request) in self.packet_send.values().zip(requests) {
+                            if sender.send(request).is_err() {
+                                error!(
+                                    "{} [ ChatClient {} ]: Failed to send floodrequest",
+                                    "✓".green(),
+                                    self.id
+                                );
+                            }
+                        }
+                        thread::sleep(Duration::from_secs(2));
+                    }
                     error!(
                             "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped",
                             "✗".red(),
