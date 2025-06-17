@@ -397,7 +397,7 @@ impl ChatClient {
                 {
                     let dest = incorrect_packet.routing_header.destination().unwrap();
 
-                    let _ = self.router.drone_crashed(unreachable_node);
+                    self.router.drone_crashed(unreachable_node);
 
                     if let Ok(new_routing_header) = self.router.get_source_routing_header(dest) {
                         let new_packet = Packet {
@@ -438,7 +438,7 @@ impl ChatClient {
             NackType::Dropped => {
                 self.router.dropped_fragment(nack_src);
 
-                if let Some((dropped_packet, requests)) = self
+                if let Some((dropped_packet, _)) = self
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
                 {
@@ -450,17 +450,6 @@ impl ChatClient {
                             nack.fragment_index
                         );
 
-                    if requests > 100 {
-                        error!(
-                            "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 100 times. Dropping permanently.",
-                            "✗".red(),
-                            self.id,
-                            dropped_packet.session_id,
-                            nack.fragment_index
-                        );
-                        return;
-                    }
-
                     let destination = dropped_packet.routing_header.destination().unwrap();
 
                     if let Ok(new_routing_header) =
@@ -471,6 +460,7 @@ impl ChatClient {
                             ..dropped_packet
                         };
 
+                        
                         self.msgfactory.insert_packet(&packet_to_resend);
 
                         info!(
