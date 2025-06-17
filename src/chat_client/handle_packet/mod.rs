@@ -391,10 +391,9 @@ impl ChatClient {
 
                 self.router.dropped_fragment(unreachable_node);
 
-                if let Some(incorrect_packet) =
-                    self
-                        .msgfactory
-                        .take_packet(packet.session_id, nack.fragment_index)
+                if let Some(incorrect_packet) = self
+                    .msgfactory
+                    .take_packet(packet.session_id, nack.fragment_index)
                 {
                     let dest = incorrect_packet.routing_header.destination().unwrap();
 
@@ -424,7 +423,6 @@ impl ChatClient {
                             self.id,
                             dest
                         );
-                        self.reinit_network();
                     }
                 }
             }
@@ -438,8 +436,6 @@ impl ChatClient {
                 );
             }
             NackType::Dropped => {
-                
-
                 self.router.dropped_fragment(nack_src);
 
                 if let Some((dropped_packet, requests)) = self
@@ -453,7 +449,7 @@ impl ChatClient {
                             dropped_packet.session_id,
                             nack.fragment_index
                         );
-                    
+
                     if requests > 100 {
                         error!(
                             "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 100 times. Dropping permanently.",
@@ -494,7 +490,6 @@ impl ChatClient {
                                 self.id,
                                 destination
                             );
-                        self.reinit_network();
                     }
                 }
             }

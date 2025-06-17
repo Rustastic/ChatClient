@@ -4,10 +4,10 @@ use messages::{
     client_commands::{ChatClientCommand, ChatClientEvent},
     high_level_messages::{ClientMessage, MessageContent},
 };
+use std::{thread, time::Duration};
 
 use super::ChatClient;
 
-mod flooding;
 mod send_message;
 
 impl ChatClient {
@@ -25,6 +25,7 @@ impl ChatClient {
                         self.id,
                     );
                     e.insert(sender);
+                    self.router.add_neighbour(node_id);
                 } else {
                     warn!(
                         "{} [ ChatClient {} ] is already connected to [ Drone {} ]",
@@ -43,6 +44,7 @@ impl ChatClient {
                         self.id
                     );
                     self.packet_send.remove(&node_id);
+                    self.router.remove_neighbour(node_id);
                 } else {
                     warn!(
                         "{} [ ChatClient {} ] is already disconnected from [ Drone {} ]",
@@ -58,7 +60,17 @@ impl ChatClient {
                     "ℹ".blue(),
                     self.id
                 );
-                self.start_flooding();
+                let requests = self.router.get_flood_requests(self.packet_send.len());
+                for (sender, request) in self.packet_send.values().zip(requests) {
+                    if let Err(_) = sender.send(request) {
+                        error!(
+                            "{} [ ChatClient {} ]: Failed to send flooding request",
+                            "✓".green(),
+                            self.id
+                        );
+                    }
+                }
+                thread::sleep(Duration::from_secs(2));
             }
             ChatClientCommand::StartChatClient => {
                 self.running = true;
