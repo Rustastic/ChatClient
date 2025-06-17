@@ -460,7 +460,6 @@ impl ChatClient {
                             ..dropped_packet
                         };
 
-                        
                         self.msgfactory.insert_packet(&packet_to_resend);
 
                         info!(

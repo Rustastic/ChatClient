@@ -62,7 +62,7 @@ impl ChatClient {
                 );
                 let requests = self.router.get_flood_requests(self.packet_send.len());
                 for (sender, request) in self.packet_send.values().zip(requests) {
-                    if let Err(_) = sender.send(request) {
+                    if sender.send(request).is_err() {
                         error!(
                             "{} [ ChatClient {} ]: Failed to send flooding request",
                             "✓".green(),
