@@ -1,3 +1,5 @@
+use std::{thread, time::Duration};
+
 use super::ChatClient;
 use colored::Colorize;
 use log::{error, info, warn};
@@ -391,14 +393,13 @@ impl ChatClient {
 
                 self.router.dropped_fragment(unreachable_node);
 
-                if let Some(incorrect_packet) =
-                    self
-                        .msgfactory
-                        .take_packet(packet.session_id, nack.fragment_index)
+                if let Some(incorrect_packet) = self
+                    .msgfactory
+                    .take_packet(packet.session_id, nack.fragment_index)
                 {
                     let dest = incorrect_packet.routing_header.destination().unwrap();
 
-                    let _ = self.router.drone_crashed(unreachable_node);
+                    self.router.drone_crashed(unreachable_node);
 
                     if let Ok(new_routing_header) = self.router.get_source_routing_header(dest) {
                         let new_packet = Packet {
@@ -424,7 +425,6 @@ impl ChatClient {
                             self.id,
                             dest
                         );
-                        self.reinit_network();
                     }
                 }
             }
@@ -438,14 +438,30 @@ impl ChatClient {
                 );
             }
             NackType::Dropped => {
-                
-
                 self.router.dropped_fragment(nack_src);
 
                 if let Some((dropped_packet, requests)) = self
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
                 {
+                    if requests > 100 {
+                        info!(
+                            "{} [ ChatClient {} ]: Reinitializing network due to excessive dropped requests",
+                            "ℹ".blue(),
+                            self.id
+                        );
+                        let requests = self.router.get_flood_requests(self.packet_send.len());
+                        for (sender, request) in self.packet_send.values().zip(requests) {
+                            if sender.send(request).is_err() {
+                                error!(
+                                    "{} [ ChatClient {} ]: Failed to send floodrequest",
+                                    "✓".green(),
+                                    self.id
+                                );
+                            }
+                        }
+                        thread::sleep(Duration::from_secs(2));
+                    }
                     error!(
                             "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped",
                             "✗".red(),
@@ -453,17 +469,6 @@ impl ChatClient {
                             dropped_packet.session_id,
                             nack.fragment_index
                         );
-                    
-                    if requests > 100 {
-                        error!(
-                            "{} [ ChatClient {} ]: Packet with session_id: {} and fragment_index: {} has been dropped more than 100 times. Dropping permanently.",
-                            "✗".red(),
-                            self.id,
-                            dropped_packet.session_id,
-                            nack.fragment_index
-                        );
-                        return;
-                    }
 
                     let destination = dropped_packet.routing_header.destination().unwrap();
 
@@ -494,7 +499,6 @@ impl ChatClient {
                                 self.id,
                                 destination
                             );
-                        self.reinit_network();
                     }
                 }
             }
