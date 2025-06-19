@@ -12,6 +12,13 @@ use wg_2024::network::NodeId;
 
 impl ChatClient {
     pub(super) fn query_communication_servers(&mut self) {
+        let server_list = &self.router.get_server_list();
+        info!(
+            "{} [ ChatClient {} ]: Server list: {:?}",
+            "ℹ".blue(),
+            self.id,
+            server_list
+        );
         for server_id in &self.router.get_server_list() {
             let message_content = MessageContent::FromClient(ClientMessage::GetServerType);
             info!(
