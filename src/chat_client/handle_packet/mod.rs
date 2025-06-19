@@ -420,6 +420,7 @@ impl ChatClient {
 
                         self.forward_packet(new_packet);
                     } else {
+                        self.forward_packet(incorrect_packet.clone());
                         error!(
                             "{} [ ChatClient {} ]: No path to destination [ CommunicationServer {} ]",
                             "✗".red(),
@@ -494,6 +495,7 @@ impl ChatClient {
 
                         self.forward_packet(packet_to_resend);
                     } else {
+                        self.forward_packet(dropped_packet.clone());
                         error!(
                                 "{} [ ChatClient {} ]: No available path to destination [ CommunicationServer {} ]",
                                 "✗".red(),
