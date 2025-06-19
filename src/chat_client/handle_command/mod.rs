@@ -34,6 +34,23 @@ impl ChatClient {
                         node_id
                     );
                 }
+
+                info!(
+                        "{} [ ChatClient {} ]: Reinitializing network AddSender",
+                        "ℹ".blue(),
+                        self.id
+                    );
+                let requests = self.router.get_flood_requests(self.packet_send.len());
+                for (sender, request) in self.packet_send.values().zip(requests) {
+                    if sender.send(request).is_err() {
+                        error!(
+                            "{} [ ChatClient {} ]: Failed to send floodrequest",
+                            "✓".green(),
+                            self.id
+                        );
+                    }
+                }
+                thread::sleep(Duration::from_secs(2));
             }
             ChatClientCommand::RemoveSender(node_id) => {
                 if self.packet_send.contains_key(&node_id) {
@@ -53,6 +70,23 @@ impl ChatClient {
                         node_id
                     );
                 }
+
+                info!(
+                        "{} [ ChatClient {} ]: Reinitializing network RemoveSender",
+                        "ℹ".blue(),
+                        self.id
+                    );
+                let requests = self.router.get_flood_requests(self.packet_send.len());
+                for (sender, request) in self.packet_send.values().zip(requests) {
+                    if sender.send(request).is_err() {
+                        error!(
+                            "{} [ ChatClient {} ]: Failed to send floodrequest",
+                            "✓".green(),
+                            self.id
+                        );
+                    }
+                }
+                thread::sleep(Duration::from_secs(2));
             }
             ChatClientCommand::InitFlooding => {
                 info!(
