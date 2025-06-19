@@ -36,10 +36,10 @@ impl ChatClient {
                 }
 
                 info!(
-                        "{} [ ChatClient {} ]: Reinitializing network AddSender",
-                        "ℹ".blue(),
-                        self.id
-                    );
+                    "{} [ ChatClient {} ]: Reinitializing network AddSender",
+                    "ℹ".blue(),
+                    self.id
+                );
                 let requests = self.router.get_flood_requests(self.packet_send.len());
                 for (sender, request) in self.packet_send.values().zip(requests) {
                     if sender.send(request).is_err() {
@@ -72,10 +72,10 @@ impl ChatClient {
                 }
 
                 info!(
-                        "{} [ ChatClient {} ]: Reinitializing network RemoveSender",
-                        "ℹ".blue(),
-                        self.id
-                    );
+                    "{} [ ChatClient {} ]: Reinitializing network RemoveSender",
+                    "ℹ".blue(),
+                    self.id
+                );
                 let requests = self.router.get_flood_requests(self.packet_send.len());
                 for (sender, request) in self.packet_send.values().zip(requests) {
                     if sender.send(request).is_err() {
