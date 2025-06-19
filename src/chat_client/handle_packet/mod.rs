@@ -383,6 +383,7 @@ impl ChatClient {
     #[allow(clippy::too_many_lines)]
     fn process_nack(&mut self, nack: &Nack, packet: &Packet) {
         let nack_src = packet.routing_header.source().unwrap();
+
         match nack.clone().nack_type {
             NackType::ErrorInRouting(unreachable_node) => {
                 error!(
@@ -444,7 +445,7 @@ impl ChatClient {
                     .msgfactory
                     .get_packet(packet.session_id, nack.fragment_index)
                 {
-                    if requests > 100 {
+                    if requests > 30 {
                         info!(
                             "{} [ ChatClient {} ]: Reinitializing network due to excessive dropped requests",
                             "ℹ".blue(),
